@@ -531,6 +531,61 @@ a.headline-text:hover {
 .index-change.down { color: var(--red); }
 .index-change.flat { color: var(--text-dim); }
 
+/* ---------- Index ticker (no-chart row — Markets panel's timer/countdown board) ---------- */
+
+.indexes-compact {
+  grid-template-columns: 1fr;
+  gap: 4px;
+}
+
+.index-ticker {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  background: var(--surface-2);
+  border: 1px solid var(--hairline-soft);
+  border-radius: var(--radius-sm);
+  padding: 5px 8px;
+  min-width: 0;
+  cursor: pointer;
+  transition: background-color 200ms var(--ease-spring);
+}
+
+.index-ticker:hover {
+  background: rgba(255, 255, 255, 0.065);
+}
+
+.index-ticker-name {
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--text-dim);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+
+.index-ticker-price {
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  font-weight: 650;
+  letter-spacing: -0.005em;
+  margin-left: auto;
+  white-space: nowrap;
+}
+
+.index-ticker-change {
+  font-size: 10.5px;
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.index-ticker-change.up { color: var(--green); }
+.index-ticker-change.down { color: var(--red); }
+.index-ticker-change.flat { color: var(--text-dim); }
+
 .range-controls {
   display: flex;
   flex-wrap: wrap;

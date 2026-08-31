@@ -466,6 +466,60 @@ function buildIndexPanels(market, card) {
   });
 }
 
+// A no-chart, price-only row — used for the core Markets panel so it reads
+// as a timer/countdown board rather than a wall of charts. Standalone market
+// tiles (added via + Add Window) keep the full IndexPanel with its chart.
+class MiniTicker {
+  constructor(container, symbol, name) {
+    this.symbol = symbol;
+    this.container = container;
+    container.innerHTML = `
+      <span class="index-ticker-name">${name}</span>
+      <span class="index-ticker-price" data-role="price">—</span>
+      <span class="index-ticker-change flat" data-role="change">—</span>
+    `;
+    this.priceEl = container.querySelector('[data-role="price"]');
+    this.changeEl = container.querySelector('[data-role="change"]');
+    container.title = 'Double-click for details';
+    container.addEventListener('dblclick', () => openDetailModal(symbol, name));
+  }
+
+  async load() {
+    try {
+      const res = await fetch(`/api/chart/${encodeURIComponent(this.symbol)}?range=1d&interval=5m`);
+      const data = await res.json();
+      if (data.error || data.price == null) throw new Error(data.error || 'no price');
+
+      this.priceEl.textContent = formatPrice(data.price, data.currency);
+      const changeCls = data.change > 0 ? 'up' : data.change < 0 ? 'down' : 'flat';
+      const sign = data.change > 0 ? '+' : '';
+      this.changeEl.className = `index-ticker-change ${changeCls}`;
+      this.changeEl.textContent =
+        data.change != null ? `${sign}${data.change.toFixed(2)} (${sign}${data.changePercent.toFixed(2)}%)` : '—';
+      return true;
+    } catch (err) {
+      this.priceEl.textContent = 'N/A';
+      this.changeEl.textContent = '—';
+      this.changeEl.className = 'index-ticker-change flat';
+      return false;
+    }
+  }
+
+  destroy() {}
+}
+
+function buildIndexTickers(market, card) {
+  const indexesEl = card.querySelector('[data-role="indexes"]');
+  indexesEl.classList.add('indexes-compact');
+  market.indexes.forEach((idx) => {
+    const rowEl = document.createElement('div');
+    rowEl.className = 'index-ticker';
+    indexesEl.appendChild(rowEl);
+    const ticker = new MiniTicker(rowEl, idx.symbol, idx.name);
+    panels.push(ticker);
+  });
+}
+
 function updateCounts() {
   openCountEl.textContent = openGrid.children.length;
   closedCountEl.textContent = closedGrid.children.length;
@@ -765,6 +819,62 @@ function applyLayoutTemplate(template) {
 function initLayoutTemplatePicker() {
   document.querySelectorAll('.layout-template-btn').forEach((btn) => {
     btn.addEventListener('click', () => applyLayoutTemplate(btn.dataset.template));
+  });
+}
+
+// ---------- Closing/restoring the core panels ----------
+// Markets/Commodities/Bonds/Watchlist/FX get the same ✕ every other window
+// has — closing one just removes it from the matrix; since these hold
+// curated data rather than a single instrument, "undo" is a "Restore …"
+// entry in the same + Add Window menu rather than a re-add-by-search flow.
+const CLOSED_PANELS_KEY = 'closed-panels';
+const CORE_PANELS = [
+  { id: 'markets', label: 'Markets' },
+  { id: 'commodities', label: 'Commodities' },
+  { id: 'bonds', label: 'Bonds' },
+  { id: 'watchlist', label: 'Watchlist' },
+  { id: 'fx', label: 'FX Matrix' }
+];
+
+function getClosedPanels() {
+  try {
+    const list = JSON.parse(localStorage.getItem(CLOSED_PANELS_KEY));
+    return Array.isArray(list) ? list : [];
+  } catch (err) {
+    return [];
+  }
+}
+
+function saveClosedPanels(list) {
+  try {
+    localStorage.setItem(CLOSED_PANELS_KEY, JSON.stringify(list));
+  } catch (err) {
+    /* localStorage unavailable — closed state just won't persist */
+  }
+}
+
+function closeCorePanel(id) {
+  const list = getClosedPanels();
+  if (!list.includes(id)) list.push(id);
+  saveClosedPanels(list);
+  const section = document.querySelector(`.dashboard-panel[data-sort-id="${id}"]`);
+  if (section) section.remove();
+}
+
+// Restoring rebuilds via a reload (same approach as switching layouts) —
+// simpler and far more robust than re-deriving each panel type's build
+// logic into a separately-callable path.
+function restoreCorePanel(id) {
+  saveClosedPanels(getClosedPanels().filter((x) => x !== id));
+  location.reload();
+}
+
+function initClosePanelButtons() {
+  document.querySelectorAll('[data-role="close-panel"]').forEach((btn) => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      closeCorePanel(btn.dataset.panelId);
+    });
   });
 }
 
@@ -1127,7 +1237,7 @@ function addMarketToDom(market, removable) {
   entry.isOpen = status.isOpen;
   (status.isOpen ? openGrid : closedGrid).appendChild(entry.card);
   applySavedOrder(entry.card.parentElement, sortKeyFor(entry.card.parentElement));
-  buildIndexPanels(market, entry.card);
+  buildIndexTickers(market, entry.card);
   updateCounts();
 }
 
@@ -1520,6 +1630,11 @@ function initAddWindowMenu() {
   const dashboardPanels = document.getElementById('dashboard-panels');
   if (!dashboardPanels) return;
 
+  const closedIds = getClosedPanels();
+  const restoreButtons = CORE_PANELS.filter((p) => closedIds.includes(p.id))
+    .map((p) => `<button type="button" data-restore="${p.id}">🔁 Restore ${escapeHtml(p.label)}</button>`)
+    .join('');
+
   const tile = document.createElement('div');
   tile.className = 'dashboard-panel add-panel-tile';
   tile.innerHTML = `
@@ -1530,9 +1645,17 @@ function initAddWindowMenu() {
       <button type="button" data-type="commodity">🛢️ Commodity</button>
       <button type="button" data-type="bond">🏦 Bond</button>
       <button type="button" data-type="market">🌍 Market</button>
+      ${restoreButtons}
     </div>
   `;
   const menu = tile.querySelector('[data-role="menu"]');
+
+  menu.querySelectorAll('[data-restore]').forEach((btn) => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      restoreCorePanel(btn.dataset.restore);
+    });
+  });
 
   tile.addEventListener('click', (e) => {
     if (e.target.closest('[data-role="menu"]')) return;
@@ -1545,7 +1668,7 @@ function initAddWindowMenu() {
     bond: 'a bond or yield ETF…'
   };
 
-  menu.querySelectorAll('button').forEach((btn) => {
+  menu.querySelectorAll('button[data-type]').forEach((btn) => {
     btn.addEventListener('click', (e) => {
       e.stopPropagation();
       menu.classList.add('hidden');
@@ -1739,7 +1862,8 @@ const LAYOUT_STATE_KEYS = [
   'livetv:tiles',
   STANDALONE_TILES_KEY,
   PANEL_SPAN_KEY,
-  LAYOUT_TEMPLATE_KEY
+  LAYOUT_TEMPLATE_KEY,
+  CLOSED_PANELS_KEY
 ];
 
 function getLayoutList() {
@@ -1911,11 +2035,23 @@ async function advanceNews() {
 }
 
 async function init() {
-  initFx();
-  const main = document.getElementById('markets-main');
+  // Closed core panels were removed from the DOM by the user's ✕ click on a
+  // previous visit; re-derive that here (rather than trusting the server-
+  // rendered HTML, which always includes all five) before anything below
+  // tries to build content into a panel that isn't there.
+  const closedIds = new Set(getClosedPanels());
+  closedIds.forEach((id) => {
+    const section = document.querySelector(`.dashboard-panel[data-sort-id="${id}"]`);
+    if (section) section.remove();
+  });
+  initClosePanelButtons();
+
+  if (!closedIds.has('fx')) initFx();
+  const main = closedIds.has('markets') ? null : document.getElementById('markets-main');
   try {
     const markets = window.__BOOTSTRAP__.markets;
 
+    if (main) {
     main.innerHTML = `
       <div class="watchlist-search">
         <input
@@ -1964,7 +2100,7 @@ async function init() {
       const entry = buildMarketCard(market, removable);
       entry.isOpen = status.isOpen;
       (status.isOpen ? openGrid : closedGrid).appendChild(entry.card);
-      buildIndexPanels(market, entry.card);
+      buildIndexTickers(market, entry.card);
     });
     applySavedOrder(openGrid, sortKeyFor(openGrid));
     applySavedOrder(closedGrid, sortKeyFor(closedGrid));
@@ -1973,22 +2109,29 @@ async function init() {
     updateCounts();
     tickStatuses();
     initMarketsSearch();
+    }
 
-    initCuratedBucket('commodities-grid', 'commodities', commoditiesAddedBucket);
-    initCuratedBucket('bonds-grid', 'bonds', bondsAddedBucket);
-    initWatchlist();
-    initSearchAdd('watchlist-input', 'watchlist-results', {
-      search: tickerSearch,
-      onSelect: (item) => watchlistBucket.addItem({ symbol: item.symbol, name: item.name })
-    });
-    initSearchAdd('commodities-input', 'commodities-results', {
-      search: tickerSearch,
-      onSelect: (item) => commoditiesAddedBucket.addItem({ symbol: item.symbol, name: item.name })
-    });
-    initSearchAdd('bonds-input', 'bonds-results', {
-      search: tickerSearch,
-      onSelect: (item) => bondsAddedBucket.addItem({ symbol: item.symbol, name: item.name })
-    });
+    if (!closedIds.has('commodities')) {
+      initCuratedBucket('commodities-grid', 'commodities', commoditiesAddedBucket);
+      initSearchAdd('commodities-input', 'commodities-results', {
+        search: tickerSearch,
+        onSelect: (item) => commoditiesAddedBucket.addItem({ symbol: item.symbol, name: item.name })
+      });
+    }
+    if (!closedIds.has('bonds')) {
+      initCuratedBucket('bonds-grid', 'bonds', bondsAddedBucket);
+      initSearchAdd('bonds-input', 'bonds-results', {
+        search: tickerSearch,
+        onSelect: (item) => bondsAddedBucket.addItem({ symbol: item.symbol, name: item.name })
+      });
+    }
+    if (!closedIds.has('watchlist')) {
+      initWatchlist();
+      initSearchAdd('watchlist-input', 'watchlist-results', {
+        search: tickerSearch,
+        onSelect: (item) => watchlistBucket.addItem({ symbol: item.symbol, name: item.name })
+      });
+    }
     initLiveTv();
     const addWindowBtn = initAddWindowMenu();
 
@@ -2016,7 +2159,7 @@ async function init() {
     await refreshAll();
     setInterval(refreshAll, 20000);
   } catch (err) {
-    main.innerHTML = `<p class="loading">Failed to load market data: ${err.message}</p>`;
+    if (main) main.innerHTML = `<p class="loading">Failed to load market data: ${err.message}</p>`;
   }
 }
 
