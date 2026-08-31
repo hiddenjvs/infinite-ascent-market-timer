@@ -1427,6 +1427,12 @@ function buildLiveTvPanel(tileId, initialSourceId) {
       const res = await fetch(`/api/livetv/${encodeURIComponent(src.channel)}`);
       const data = await res.json();
       if (!data.videoId) throw new Error(data.error || 'no live video');
+      // Guard against a slower request for a tab the user already switched
+      // away from resolving after a faster one for the tab now active —
+      // without this, the slower response silently overwrites the iframe
+      // with the wrong network's stream while the newer tab stays
+      // highlighted as active.
+      if (section.dataset.currentSource !== src.id) return;
       if (data.videoId !== currentVideoId) {
         currentVideoId = data.videoId;
         frame.src = `https://www.youtube-nocookie.com/embed/${data.videoId}?autoplay=1&mute=1`;
