@@ -640,6 +640,8 @@ function renderNewsTicker() {
   });
 }
 
+let lastNewsKey = '';
+
 async function loadNews() {
   const dot = document.querySelector('[data-role="news-live-dot"]');
   try {
@@ -648,16 +650,25 @@ async function loadNews() {
     if (!Array.isArray(data) || data.length === 0) throw new Error('empty');
     newsHeadlines = data;
     if (dot) dot.className = 'live-dot ok';
+
+    // Only rebuild the DOM (which restarts the scroll animation) when the
+    // headline set actually changed — otherwise every poll would visibly
+    // snap the ticker back to the start even with nothing new to show.
+    const key = data.map((n) => n.headline).join('|');
+    if (key !== lastNewsKey) {
+      lastNewsKey = key;
+      renderNewsTicker();
+    }
   } catch (err) {
     if (dot) dot.className = 'live-dot down';
+    if (!newsHeadlines.length) renderNewsTicker();
   }
-  renderNewsTicker();
 }
 
 async function init() {
   initFx();
   loadNews();
-  setInterval(loadNews, 3 * 60 * 1000); // backend caches the feeds for 3 min too
+  setInterval(loadNews, 90 * 1000); // matches the backend's 90s cache on the news feeds
   const main = document.getElementById('markets-main');
   try {
     const markets = window.__BOOTSTRAP__.markets;

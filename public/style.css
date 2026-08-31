@@ -89,17 +89,26 @@ body {
 .header-top {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  padding: 18px 28px 14px;
+  gap: 22px;
+  padding: 18px 28px;
 }
 
-/* ---------- News ticker ---------- */
+.header-top .brand,
+.header-top .local-clock {
+  flex: none;
+}
+
+/* ---------- News ticker (sits between the logo and the clock) ---------- */
 
 .news-ticker {
+  flex: 1;
+  min-width: 0;
   display: flex;
   align-items: stretch;
-  border-top: 1px solid var(--hairline-soft);
-  height: 30px;
+  height: 46px;
+  background: var(--surface-2);
+  border: 1px solid var(--hairline-soft);
+  border-radius: var(--radius-md);
   overflow: hidden;
 }
 
@@ -108,11 +117,11 @@ body {
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 0 14px;
+  padding: 0 16px;
   background: rgba(255, 159, 10, 0.1);
   border-right: 1px solid var(--hairline-soft);
   font-family: var(--mono);
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 700;
   letter-spacing: 0.08em;
   color: var(--amber);
@@ -151,26 +160,27 @@ body {
 .news-ticker-item {
   display: inline-flex;
   align-items: center;
-  padding: 0 22px;
+  padding: 0 24px;
   font-family: var(--mono);
-  font-size: 11px;
-  color: var(--text-dim);
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text); /* full brightness for the headline itself — legibility over decoration */
   text-decoration: none;
 }
 
 a.news-ticker-item:hover {
-  color: var(--text);
+  color: var(--accent);
 }
 
 .news-ticker-item .source {
-  color: var(--text-faint);
-  margin-right: 8px;
+  color: var(--text-dim);
+  margin-right: 9px;
   font-weight: 700;
 }
 
 .news-ticker-item .sep {
   color: var(--hairline);
-  margin-left: 22px;
+  margin-left: 24px;
 }
 
 @media (prefers-reduced-motion: reduce) {

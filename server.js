@@ -46,13 +46,16 @@ app.get('/api/fx', (req, res) => {
 
 // Finance/econ headline ticker — no free public RSS survives from Reuters or
 // AP anymore (both retired syndication years ago; confirmed dead ends), so
-// this pulls from CNBC Business News and WSJ Markets (via Dow Jones' feed
-// infrastructure, which also serves MarketWatch) — same tier of source.
+// this pulls from four free, no-key sources for both volume and diversity:
+// CNBC, WSJ Markets (Dow Jones), Yahoo Finance, and BBC Business (a non-US
+// perspective in the mix).
 const NEWS_FEEDS = [
   { url: 'https://www.cnbc.com/id/10001147/device/rss/rss.html', source: 'CNBC' },
-  { url: 'https://feeds.content.dowjones.io/public/rss/RSSMarketsMain', source: 'WSJ Markets' }
+  { url: 'https://feeds.content.dowjones.io/public/rss/RSSMarketsMain', source: 'WSJ Markets' },
+  { url: 'https://finance.yahoo.com/news/rssindex', source: 'Yahoo Finance' },
+  { url: 'https://feeds.bbci.co.uk/news/business/rss.xml', source: 'BBC Business' }
 ];
-const NEWS_CACHE_TTL_MS = 3 * 60 * 1000;
+const NEWS_CACHE_TTL_MS = 90 * 1000; // short enough that the ticker visibly refreshes
 const xmlParser = new XMLParser({ ignoreAttributes: true, htmlEntities: true });
 let newsCache = null;
 
@@ -78,22 +81,32 @@ app.get('/api/news', async (req, res) => {
   }
 
   const results = await Promise.allSettled(NEWS_FEEDS.map(fetchNewsFeed));
-  const items = results.filter((r) => r.status === 'fulfilled').flatMap((r) => r.value);
+  // Keep each source's own items sorted by recency, but merge round-robin
+  // (one from each source per round) instead of a flat sort-by-recency —
+  // a feed that simply updates more often would otherwise crowd out the rest.
+  const bySource = results
+    .filter((r) => r.status === 'fulfilled')
+    .map((r) => r.value.sort((a, b) => (b.pubDate ?? 0) - (a.pubDate ?? 0)));
 
-  if (items.length === 0) {
+  if (bySource.length === 0) {
     if (newsCache) return res.json(newsCache.data);
     return res.status(502).json({ error: 'No news feeds reachable' });
   }
 
-  items.sort((a, b) => (b.pubDate ?? 0) - (a.pubDate ?? 0));
   const seen = new Set();
   const deduped = [];
-  for (const item of items) {
-    const key = item.headline.toLowerCase();
-    if (seen.has(key)) continue;
-    seen.add(key);
-    deduped.push(item);
-    if (deduped.length >= 24) break;
+  for (let i = 0; deduped.length < 24; i++) {
+    let addedAny = false;
+    for (const list of bySource) {
+      if (i >= list.length) continue;
+      addedAny = true;
+      const key = list[i].headline.toLowerCase();
+      if (seen.has(key)) continue;
+      seen.add(key);
+      deduped.push(list[i]);
+      if (deduped.length >= 24) break;
+    }
+    if (!addedAny) break;
   }
 
   newsCache = { at: Date.now(), data: deduped };
