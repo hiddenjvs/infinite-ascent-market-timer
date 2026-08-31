@@ -380,15 +380,6 @@ function buildMarketCard(market) {
     <div class="indexes" data-role="indexes"></div>
   `;
 
-  const indexesEl = card.querySelector('[data-role="indexes"]');
-  market.indexes.forEach((idx) => {
-    const panelEl = document.createElement('div');
-    panelEl.className = 'index-card';
-    indexesEl.appendChild(panelEl);
-    const panel = new IndexPanel(panelEl, idx.symbol, idx.name);
-    panels.push(panel);
-  });
-
   const entry = {
     market,
     card,
@@ -401,6 +392,20 @@ function buildMarketCard(market) {
   statusEls.push(entry);
 
   return entry;
+}
+
+// Charts are created only after `card` is attached to the document — creating
+// a lightweight-charts instance inside a still-detached node measures 0 width,
+// then visibly resizes once attached, which is a real (and avoidable) layout shift.
+function buildIndexPanels(market, card) {
+  const indexesEl = card.querySelector('[data-role="indexes"]');
+  market.indexes.forEach((idx) => {
+    const panelEl = document.createElement('div');
+    panelEl.className = 'index-card';
+    indexesEl.appendChild(panelEl);
+    const panel = new IndexPanel(panelEl, idx.symbol, idx.name);
+    panels.push(panel);
+  });
 }
 
 function updateCounts() {
@@ -555,11 +560,13 @@ async function loadFxRates() {
   return { succeeded, total: legs.length };
 }
 
-async function initFx() {
+function initFx() {
   const wrap = document.getElementById('fx-matrix-wrap');
   try {
-    const res = await fetch('/api/fx');
-    fxCurrencies = await res.json();
+    // Structure comes from the bootstrap data embedded server-side (no fetch
+    // round trip), so the table renders at full size on the very first paint
+    // instead of swapping in after a "Loading…" placeholder.
+    fxCurrencies = window.__BOOTSTRAP__.fx;
     buildFxMatrix(fxCurrencies);
   } catch (err) {
     wrap.innerHTML = `<p class="loading">Failed to load FX rates: ${err.message}</p>`;
@@ -578,11 +585,10 @@ async function refreshAll() {
 }
 
 async function init() {
-  await initFx();
+  initFx();
   const main = document.getElementById('markets-main');
   try {
-    const res = await fetch('/api/markets');
-    const markets = await res.json();
+    const markets = window.__BOOTSTRAP__.markets;
 
     main.innerHTML = `
       <section class="market-section">
@@ -608,6 +614,7 @@ async function init() {
       const entry = buildMarketCard(market);
       entry.isOpen = status.isOpen;
       (status.isOpen ? openGrid : closedGrid).appendChild(entry.card);
+      buildIndexPanels(market, entry.card);
     });
     updateCounts();
     tickStatuses();

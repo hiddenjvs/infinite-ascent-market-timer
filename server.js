@@ -1,10 +1,22 @@
 const express = require('express');
 const path = require('path');
+const fs = require('fs');
 const markets = require('./data/markets.json');
 const fxCurrencies = require('./data/fx.json');
 
 const app = express();
 const PORT = process.env.PORT || 4173;
+
+// Read once at boot; injecting markets/fx data directly into the HTML response
+// lets the frontend build its layout synchronously on first script execution
+// instead of fetching-then-swapping a "Loading…" placeholder (which was the
+// dominant cause of layout shift on first load).
+const indexTemplate = fs.readFileSync(path.join(__dirname, 'public', 'index.html'), 'utf8');
+const bootstrapScript = `<script>window.__BOOTSTRAP__=${JSON.stringify({
+  markets,
+  fx: fxCurrencies
+})};</script>`;
+const indexHtml = indexTemplate.replace('</head>', `${bootstrapScript}</head>`);
 
 // Simple in-memory cache to stay well under Yahoo's informal rate limits
 // and keep the dashboard snappy even with 10 markets x 2 indexes = 20 symbols.
@@ -17,7 +29,11 @@ const YF_HEADERS = {
   Accept: 'application/json'
 };
 
-app.use(express.static(path.join(__dirname, 'public')));
+app.use(express.static(path.join(__dirname, 'public'), { index: false }));
+
+app.get('/', (req, res) => {
+  res.type('html').send(indexHtml);
+});
 
 app.get('/api/markets', (req, res) => {
   res.json(markets);
