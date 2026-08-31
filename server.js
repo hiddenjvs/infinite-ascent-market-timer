@@ -151,8 +151,16 @@ app.get('/api/livetv/:channel', async (req, res) => {
       html.match(/"videoDetails":\{"videoId":"([A-Za-z0-9_-]{11})"/) ||
       html.match(/<link rel="canonical" href="https:\/\/www\.youtube\.com\/watch\?v=([A-Za-z0-9_-]{11})"/);
     if (!match) {
-      const isConsentWall = /consent\.youtube\.com|Before you continue to YouTube/i.test(html);
-      throw new Error(isConsentWall ? 'YouTube served a consent page instead of the live page' : 'No live video found for this channel');
+      // Temporary diagnostic: the consent-wall theory didn't hold on the
+      // deployed instance (still 502s with the generic message even after
+      // the CONSENT cookie fix), so surface a snippet of whatever YouTube
+      // actually sent back instead of guessing further blind.
+      const snippet = html.replace(/\s+/g, ' ').trim().slice(0, 500);
+      console.error(`livetv/${channel}: no match. length=${html.length} snippet=${snippet}`);
+      const err = new Error('No live video found for this channel');
+      err.debugSnippet = snippet;
+      err.debugLength = html.length;
+      throw err;
     }
 
     const data = { videoId: match[1] };
@@ -161,7 +169,7 @@ app.get('/api/livetv/:channel', async (req, res) => {
   } catch (err) {
     console.error(`livetv/${channel} failed:`, err.message);
     if (cached) return res.json(cached.data);
-    res.status(502).json({ error: err.message });
+    res.status(502).json({ error: err.message, debugSnippet: err.debugSnippet, debugLength: err.debugLength });
   }
 });
 
