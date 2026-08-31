@@ -51,42 +51,32 @@
     <button class="layouts-save-btn" id="layouts-save-btn" type="button">+ Save current layout</button>
   </div>
   <p class="reorg-hint">
-    Drag any panel by its <span class="grip">⠿</span> handle to reposition it — any panel can sit
-    next to any other. Toggle <b>⤢</b> to switch a panel between compact and full width. <b>+</b>
-    tiles add more windows.
+    Drag any panel by its <span class="grip">⠿</span> handle to reposition it, or its corner to
+    resize it — any panel can sit next to any other. <b>+</b> tiles add more windows.
   </p>
 
   <div id="dashboard-panels">
-    <section class="dashboard-panel panel-wide" data-sort-id="markets">
+    <section class="dashboard-panel" data-sort-id="markets">
       <div class="panel-drag-handle" draggable="true">
         <span><span class="grip">⠿</span> MARKETS</span>
-        <span class="panel-handle-actions">
-          <button class="instrument-remove" type="button" data-role="widthtoggle" title="Toggle full width">⤢</button>
-        </span>
       </div>
       <main id="markets-main" class="markets-main">
         <p class="loading">Loading market data…</p>
       </main>
     </section>
 
-    <section class="dashboard-panel panel-wide" data-sort-id="commodities">
+    <section class="dashboard-panel" data-sort-id="commodities">
       <div class="panel-drag-handle" draggable="true">
         <span><span class="grip">⠿</span> COMMODITIES</span>
-        <span class="panel-handle-actions">
-          <button class="instrument-remove" type="button" data-role="widthtoggle" title="Toggle full width">⤢</button>
-        </span>
       </div>
       <div class="commodities-main">
         <div class="commodities-grid" id="commodities-grid"></div>
       </div>
     </section>
 
-    <section class="dashboard-panel panel-wide" data-sort-id="watchlist">
+    <section class="dashboard-panel" data-sort-id="watchlist">
       <div class="panel-drag-handle" draggable="true">
         <span><span class="grip">⠿</span> WATCHLIST</span>
-        <span class="panel-handle-actions">
-          <button class="instrument-remove" type="button" data-role="widthtoggle" title="Toggle full width">⤢</button>
-        </span>
       </div>
       <div class="watchlist-main">
         <div class="watchlist-search">
@@ -103,12 +93,9 @@
       </div>
     </section>
 
-    <section class="dashboard-panel panel-wide" data-sort-id="fx">
+    <section class="dashboard-panel" data-sort-id="fx">
       <div class="panel-drag-handle" draggable="true">
         <span><span class="grip">⠿</span> FX</span>
-        <span class="panel-handle-actions">
-          <button class="instrument-remove" type="button" data-role="widthtoggle" title="Toggle full width">⤢</button>
-        </span>
       </div>
       <div class="fx-section">
         <div class="fx-bar">

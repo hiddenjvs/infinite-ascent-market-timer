@@ -867,28 +867,33 @@ a.headline-text:hover {
   color: var(--text);
 }
 
+/* Fixed 12-column grid (not auto-fill/1fr) so a column has a well-defined
+   pixel pitch at any given viewport width — that's what makes "drag to
+   resize" translate cleanly from pointer movement to a column-span delta.
+   Every panel is a generic container: same drag-to-reposition, same
+   drag-to-resize, regardless of what's inside it. */
 #dashboard-panels {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(380px, 1fr));
+  grid-template-columns: repeat(12, 1fr);
   gap: 10px;
   align-items: start;
   padding: 0 6px;
 }
 
-/* The big data panels (Markets/Commodities/Watchlist/FX) default to full
-   width; compact tile-style panels (Live TV) don't, so several can sit
-   side by side in the same row — drag any panel to reposition it in the
-   matrix, order is what's saved. */
-.dashboard-panel.panel-wide {
-  grid-column: 1 / -1;
-}
-
 .dashboard-panel {
-  transition: opacity 150ms ease, transform 150ms ease;
+  position: relative;
+  grid-column: span 12; /* default before JS applies a saved/explicit span */
+  min-width: 0;
+  transition: opacity 150ms ease; /* grid-column deliberately not transitioned — resize needs 1:1 live feedback */
 }
 
 .dashboard-panel.panel-dragging {
   opacity: 0.4;
+}
+
+.dashboard-panel.resizing {
+  z-index: 5;
+  opacity: 0.92;
 }
 
 .dashboard-panel.panel-drop-target {
@@ -931,6 +936,37 @@ a.headline-text:hover {
   display: flex;
   align-items: center;
   gap: 5px;
+}
+
+/* Drag-to-resize handle — bottom-right corner of every panel, generic
+   regardless of what the panel contains. */
+.panel-resize-handle {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  width: 18px;
+  height: 18px;
+  cursor: nwse-resize;
+  touch-action: none;
+  opacity: 0;
+  transition: opacity 150ms var(--ease-spring);
+}
+
+.dashboard-panel:hover .panel-resize-handle,
+.dashboard-panel.resizing .panel-resize-handle {
+  opacity: 1;
+}
+
+.panel-resize-handle::after {
+  content: '';
+  position: absolute;
+  right: 4px;
+  bottom: 4px;
+  width: 8px;
+  height: 8px;
+  border-right: 2px solid var(--text-dim);
+  border-bottom: 2px solid var(--text-dim);
+  border-bottom-right-radius: 2px;
 }
 
 /* ============================================================
@@ -1352,6 +1388,7 @@ a.headline-text:hover {
 /* "+" ghost tile — always the trailing item in the matrix, click to add
    another Live TV tile. */
 .add-panel-tile {
+  grid-column: span 4;
   display: flex;
   flex-direction: column;
   align-items: center;

@@ -597,44 +597,77 @@ function makeSortable(container, storageKey, { handleSelector, afterReorder } = 
   });
 }
 
-// ---------- Panel width toggle ----------
-// Any panel — not just Live TV — can be compact (sits in the matrix next to
-// other panels) or full width. Default is per panel type, but the user's
-// choice always wins and persists.
-const PANEL_WIDTH_KEY = 'panelwidth:state';
+// ---------- Panel resize (generic — works the same on every panel type) ----------
+// #dashboard-panels is a fixed 12-column grid specifically so a column has a
+// well-defined pixel pitch to drag against. Every panel is a plain
+// container: dragging its corner handle changes its grid-column span
+// (2-12), independent of what's inside it. The span persists per panel id.
+const PANEL_SPAN_KEY = 'panelspan:state';
+const PANEL_SPAN_MIN = 2;
+const PANEL_SPAN_MAX = 12;
 
-function getPanelWidthState() {
+function getPanelSpanState() {
   try {
-    const s = JSON.parse(localStorage.getItem(PANEL_WIDTH_KEY));
+    const s = JSON.parse(localStorage.getItem(PANEL_SPAN_KEY));
     return s && typeof s === 'object' ? s : {};
   } catch (err) {
     return {};
   }
 }
 
-function setPanelWideState(id, wide) {
-  const state = getPanelWidthState();
-  state[id] = wide;
+function setPanelSpan(id, span) {
+  const state = getPanelSpanState();
+  state[id] = span;
   try {
-    localStorage.setItem(PANEL_WIDTH_KEY, JSON.stringify(state));
+    localStorage.setItem(PANEL_SPAN_KEY, JSON.stringify(state));
   } catch (err) {
-    /* localStorage unavailable — width choice just won't persist */
+    /* localStorage unavailable — size choice just won't persist */
   }
 }
 
-function initPanelWidthToggle(panelEl, defaultWide) {
-  const id = panelEl.dataset.sortId;
-  const state = getPanelWidthState();
-  const wide = Object.prototype.hasOwnProperty.call(state, id) ? state[id] : defaultWide;
-  panelEl.classList.toggle('panel-wide', wide);
+function applyPanelSpan(panelEl, span) {
+  const clamped = Math.min(PANEL_SPAN_MAX, Math.max(PANEL_SPAN_MIN, span));
+  panelEl.style.gridColumn = `span ${clamped}`;
+  return clamped;
+}
 
-  const btn = panelEl.querySelector('[data-role="widthtoggle"]');
-  if (!btn) return;
-  btn.addEventListener('click', (e) => {
+function initResizeHandle(panelEl, defaultSpan) {
+  const id = panelEl.dataset.sortId;
+  const state = getPanelSpanState();
+  applyPanelSpan(panelEl, Object.prototype.hasOwnProperty.call(state, id) ? state[id] : defaultSpan);
+
+  const handle = document.createElement('div');
+  handle.className = 'panel-resize-handle';
+  handle.title = 'Drag to resize';
+  panelEl.appendChild(handle);
+
+  handle.addEventListener('pointerdown', (e) => {
+    e.preventDefault();
     e.stopPropagation();
-    const nowWide = !panelEl.classList.contains('panel-wide');
-    panelEl.classList.toggle('panel-wide', nowWide);
-    setPanelWideState(id, nowWide);
+    const container = panelEl.parentElement;
+    const startX = e.clientX;
+    const startSpan = parseInt(panelEl.style.gridColumn.replace('span ', ''), 10) || defaultSpan;
+    // Approximate column pitch (column width + gap) from the container's
+    // current pixel width — doesn't need to be pixel-perfect, just
+    // proportional, since the result snaps to whole columns anyway.
+    const pitch = container.getBoundingClientRect().width / PANEL_SPAN_MAX;
+    panelEl.classList.add('resizing');
+    handle.setPointerCapture(e.pointerId);
+
+    function onMove(ev) {
+      const deltaSpan = Math.round((ev.clientX - startX) / pitch);
+      applyPanelSpan(panelEl, startSpan + deltaSpan);
+    }
+    function onUp() {
+      handle.releasePointerCapture(e.pointerId);
+      handle.removeEventListener('pointermove', onMove);
+      handle.removeEventListener('pointerup', onUp);
+      panelEl.classList.remove('resizing');
+      const finalSpan = parseInt(panelEl.style.gridColumn.replace('span ', ''), 10);
+      setPanelSpan(id, finalSpan);
+    }
+    handle.addEventListener('pointermove', onMove);
+    handle.addEventListener('pointerup', onUp);
   });
 }
 
@@ -1004,7 +1037,6 @@ function buildLiveTvPanel(tileId, initialSourceId) {
     <div class="panel-drag-handle" draggable="true">
       <span><span class="grip">⠿</span> LIVE TV</span>
       <span class="panel-handle-actions">
-        <button class="instrument-remove" type="button" data-role="widthtoggle" title="Toggle full width">⤢</button>
         <button class="instrument-remove" type="button" data-role="remove" title="Remove this tile">✕</button>
       </span>
     </div>
@@ -1080,7 +1112,7 @@ function buildLiveTvPanel(tileId, initialSourceId) {
   });
 
   setSource(initialSourceId);
-  initPanelWidthToggle(section, false); // TV tiles default to compact
+  initResizeHandle(section, 4); // TV tiles default to a third of the width
   return section;
 }
 
@@ -1240,7 +1272,7 @@ const LAYOUT_STATE_KEYS = [
   'order:watchlist',
   'watchlist:tickers',
   'livetv:tiles',
-  PANEL_WIDTH_KEY
+  PANEL_SPAN_KEY
 ];
 
 function getLayoutList() {
@@ -1466,7 +1498,7 @@ async function init() {
     // shuffle it out of trailing position, so re-pin it after.
     const dashboardPanels = document.getElementById('dashboard-panels');
     [...dashboardPanels.querySelectorAll('.dashboard-panel[data-sort-id]')].forEach((p) => {
-      if (!p.dataset.livetvTile) initPanelWidthToggle(p, true); // core panels default to full width
+      if (!p.dataset.livetvTile) initResizeHandle(p, 12); // core panels default to full width
     });
     applySavedOrder(dashboardPanels, sortKeyFor(dashboardPanels));
     if (addLiveTvBtn) dashboardPanels.appendChild(addLiveTvBtn);
