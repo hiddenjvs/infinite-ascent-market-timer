@@ -546,7 +546,9 @@ body {
 }
 
 .fx-table-wrap {
-  overflow-x: auto;
+  display: inline-block; /* shrink-wrap to the table's natural size — no leftover empty box */
+  max-width: 100%;
+  overflow-x: auto; /* fallback only: kicks in if a narrow window can't fit it */
   border: 1px solid var(--hairline);
   border-radius: var(--radius-md);
   background: var(--surface-1-alt);
@@ -558,22 +560,13 @@ body {
   border-collapse: collapse;
   font-family: var(--mono);
   font-size: 10.5px;
-  width: 100%;
-  table-layout: fixed;
-}
-
-.fx-matrix .fx-corner,
-.fx-matrix .fx-row-head {
-  width: 9%;
 }
 
 .fx-matrix th,
 .fx-matrix td {
-  padding: 4px 6px;
+  padding: 3px 8px;
   text-align: right;
   white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
   border-bottom: 1px solid var(--hairline-soft);
   border-left: 1px solid var(--hairline-soft);
 }
