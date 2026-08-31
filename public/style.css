@@ -875,6 +875,44 @@ a.headline-text:hover {
   color: var(--text);
 }
 
+/* ---------- Grid layout template picker (CCTV-style N-across presets) ---------- */
+
+.layout-template-picker {
+  display: flex;
+  gap: 4px;
+}
+
+.layout-template-btn {
+  background: transparent;
+  border: 1px solid var(--hairline);
+  color: var(--text-faint);
+  font-family: var(--mono);
+  font-size: 10px;
+  font-weight: 600;
+  padding: 3px 9px;
+  border-radius: 999px;
+  cursor: pointer;
+  transition: background-color 150ms var(--ease-spring), color 150ms var(--ease-spring),
+    border-color 150ms var(--ease-spring);
+}
+
+.layout-template-btn:hover {
+  border-color: rgba(255, 255, 255, 0.22);
+  color: var(--text);
+}
+
+.layout-template-btn.active {
+  color: #ffffff;
+  background: var(--accent-contrast);
+  border-color: var(--accent-contrast);
+}
+
+/* Forces every panel to the same column span — !important because it has
+   to beat each panel's own inline style set by the resize handle. */
+#dashboard-panels[data-template="2"] .dashboard-panel { grid-column: span 6 !important; }
+#dashboard-panels[data-template="3"] .dashboard-panel { grid-column: span 4 !important; }
+#dashboard-panels[data-template="4"] .dashboard-panel { grid-column: span 3 !important; }
+
 /* Fixed 12-column grid (not auto-fill/1fr) so a column has a well-defined
    pixel pitch at any given viewport width — that's what makes "drag to
    resize" translate cleanly from pointer movement to a column-span delta.
@@ -1414,6 +1452,7 @@ a.headline-text:hover {
 /* "+" ghost tile — always the trailing item in the matrix, click to add
    another Live TV tile. */
 .add-panel-tile {
+  position: relative;
   grid-column: span 4;
   display: flex;
   flex-direction: column;
@@ -1445,6 +1484,69 @@ a.headline-text:hover {
   font-weight: 400;
   line-height: 1;
 }
+
+/* Popover menu for the generic "+ Add Window" tile */
+.add-window-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 10;
+  width: max-content;
+  min-width: 180px;
+  background: rgba(20, 20, 22, 0.97);
+  backdrop-filter: var(--blur-lg);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-md);
+  box-shadow: 0 12px 28px -10px rgba(0, 0, 0, 0.75);
+  overflow: hidden;
+  cursor: default;
+}
+
+.add-window-menu.hidden { display: none; }
+
+.add-window-menu button {
+  display: block;
+  width: 100%;
+  text-align: left;
+  background: transparent;
+  border: none;
+  border-bottom: 1px solid var(--hairline-soft);
+  color: var(--text-dim);
+  font-family: inherit;
+  font-size: 12.5px;
+  font-weight: 500;
+  letter-spacing: 0;
+  padding: 9px 14px;
+  cursor: pointer;
+}
+
+.add-window-menu button:last-child { border-bottom: none; }
+.add-window-menu button:hover { background: rgba(10, 132, 255, 0.12); color: var(--text); }
+
+/* Inline search popover for the ticker/commodity/bond/market add flows */
+.add-window-search {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 10;
+  width: max-content;
+  min-width: 260px;
+  cursor: default;
+}
+
+.add-window-search .watchlist-input {
+  width: 100%;
+}
+
+.add-window-search .watchlist-results {
+  position: static;
+  margin-top: 4px;
+  display: none;
+}
+
+.add-window-search .watchlist-results.open { display: block; }
 
 .panel-drag-handle .instrument-remove {
   flex: none;

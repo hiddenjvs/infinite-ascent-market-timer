@@ -1,0 +1,6 @@
+[
+  { "symbol": "^IRX", "name": "13-Week T-Bill Yield", "flag": "🏦", "unit": "%" },
+  { "symbol": "^FVX", "name": "5-Year Treasury Yield", "flag": "🏦", "unit": "%" },
+  { "symbol": "^TNX", "name": "10-Year Treasury Yield", "flag": "🏦", "unit": "%" },
+  { "symbol": "^TYX", "name": "30-Year Treasury Yield", "flag": "🏦", "unit": "%" }
+]

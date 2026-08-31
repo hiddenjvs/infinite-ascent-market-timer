@@ -49,10 +49,19 @@
     <span class="layouts-label">LAYOUTS</span>
     <div class="layouts-tabs" id="layouts-tabs"></div>
     <button class="layouts-save-btn" id="layouts-save-btn" type="button">+ Save current layout</button>
+    <span class="layouts-label" style="margin-left: 10px">GRID</span>
+    <div class="layout-template-picker">
+      <button class="layout-template-btn active" type="button" data-template="free">Free</button>
+      <button class="layout-template-btn" type="button" data-template="2">2 across</button>
+      <button class="layout-template-btn" type="button" data-template="3">3 across</button>
+      <button class="layout-template-btn" type="button" data-template="4">4 across</button>
+    </div>
   </div>
   <p class="reorg-hint">
     Drag any panel by its <span class="grip">⠿</span> handle to reposition it, or its corner to
-    resize it — any panel can sit next to any other. <b>+</b> tiles add more windows.
+    resize it — any panel can sit next to any other. <b>+ Add Window</b> adds a market, stock,
+    commodity, bond, or live TV tile. Pick a grid preset above for uniform CCTV-style columns
+    that keep flowing as you add more.
   </p>
 
   <div id="dashboard-panels">
@@ -81,6 +90,25 @@
           <div class="watchlist-results" id="commodities-results"></div>
         </div>
         <div class="commodities-grid" id="commodities-grid"></div>
+      </div>
+    </section>
+
+    <section class="dashboard-panel" data-sort-id="bonds">
+      <div class="panel-drag-handle" draggable="true">
+        <span><span class="grip">⠿</span> BONDS</span>
+      </div>
+      <div class="commodities-main panel-body">
+        <div class="watchlist-search">
+          <input
+            type="text"
+            id="bonds-input"
+            class="watchlist-input"
+            placeholder="Add another bond/yield (e.g. TLT, German Bund)…"
+            autocomplete="off"
+          />
+          <div class="watchlist-results" id="bonds-results"></div>
+        </div>
+        <div class="commodities-grid" id="bonds-grid"></div>
       </div>
     </section>
 

@@ -485,12 +485,17 @@ function tickStatuses() {
     if (status.isOpen !== entry.isOpen) {
       entry.isOpen = status.isOpen;
       entry.nextEvent = status.target.getTime();
-      const targetGrid = status.isOpen ? openGrid : closedGrid;
-      targetGrid.appendChild(entry.card);
-      // Land it in its previously-saved manual position within the new
-      // group, rather than always at the end.
-      applySavedOrder(targetGrid, sortKeyFor(targetGrid));
-      groupsChanged = true;
+      // Standalone market tiles (added via the generic + menu) live in their
+      // own window, not the Open/Closed grids — only relocate cards that
+      // actually belong to one of those two grids.
+      if (entry.autoGroup !== false) {
+        const targetGrid = status.isOpen ? openGrid : closedGrid;
+        targetGrid.appendChild(entry.card);
+        // Land it in its previously-saved manual position within the new
+        // group, rather than always at the end.
+        applySavedOrder(targetGrid, sortKeyFor(targetGrid));
+        groupsChanged = true;
+      }
     } else {
       entry.nextEvent = status.target.getTime();
     }
@@ -510,6 +515,7 @@ function sortKeyFor(el) {
   if (el === openGrid) return 'order:markets-open';
   if (el === closedGrid) return 'order:markets-closed';
   if (el.id === 'commodities-grid') return 'order:commodities';
+  if (el.id === 'bonds-grid') return 'order:bonds';
   if (el.id === 'watchlist-grid') return 'order:watchlist';
   if (el.id === 'dashboard-panels') return 'order:dashboard-panels';
   return null;
@@ -697,7 +703,11 @@ function initResizeHandle(panelEl, defaultCol) {
     handle.setPointerCapture(e.pointerId);
 
     function onMove(ev) {
-      applyPanelCol(panelEl, startCol + Math.round((ev.clientX - startX) / colPitch));
+      // Width is driven by a layout template (if one is active) — dragging
+      // it manually wouldn't have any visible effect, so don't bother.
+      if (getLayoutTemplate() === 'free') {
+        applyPanelCol(panelEl, startCol + Math.round((ev.clientX - startX) / colPitch));
+      }
 
       const dy = ev.clientY - startY;
       if (heightEngaged || Math.abs(dy) > 8) {
@@ -716,6 +726,45 @@ function initResizeHandle(panelEl, defaultCol) {
     }
     handle.addEventListener('pointermove', onMove);
     handle.addEventListener('pointerup', onUp);
+  });
+}
+
+// ---------- Layout templates (CCTV/multi-camera-viewer style presets) ----------
+// "Free" is the default: every panel keeps its own individually dragged
+// width. Picking 2/3/4 forces every panel to that many equal columns —
+// dragging a panel's own width is disabled while a template is active
+// (there'd be nothing for it to do, the CSS override always wins), height
+// still drags freely either way. Whatever panel count you add, they just
+// keep flowing into more rows at that same column count.
+const LAYOUT_TEMPLATE_KEY = 'dashboard:template';
+const LAYOUT_TEMPLATES = ['free', '2', '3', '4'];
+
+function getLayoutTemplate() {
+  try {
+    const t = localStorage.getItem(LAYOUT_TEMPLATE_KEY);
+    return LAYOUT_TEMPLATES.includes(t) ? t : 'free';
+  } catch (err) {
+    return 'free';
+  }
+}
+
+function applyLayoutTemplate(template) {
+  const dashboardPanels = document.getElementById('dashboard-panels');
+  if (!dashboardPanels) return;
+  dashboardPanels.dataset.template = template === 'free' ? '' : template;
+  try {
+    localStorage.setItem(LAYOUT_TEMPLATE_KEY, template);
+  } catch (err) {
+    /* localStorage unavailable — choice just won't persist */
+  }
+  document.querySelectorAll('.layout-template-btn').forEach((btn) => {
+    btn.classList.toggle('active', btn.dataset.template === template);
+  });
+}
+
+function initLayoutTemplatePicker() {
+  document.querySelectorAll('.layout-template-btn').forEach((btn) => {
+    btn.addEventListener('click', () => applyLayoutTemplate(btn.dataset.template));
   });
 }
 
@@ -958,17 +1007,20 @@ function createTickerBucket(storageKey, gridId) {
 
 const watchlistBucket = createTickerBucket('watchlist:tickers', 'watchlist-grid');
 const commoditiesAddedBucket = createTickerBucket('commodities:added', 'commodities-grid');
+const bondsAddedBucket = createTickerBucket('bonds:added', 'bonds-grid');
 
-function initCommodities() {
-  const grid = document.getElementById('commodities-grid');
-  const commodities = (window.__BOOTSTRAP__ && window.__BOOTSTRAP__.commodities) || [];
-  commodities.forEach((c) => {
+// Shared by Commodities and Bonds — both are "a curated fixed list, plus
+// whatever the user has added" panels, same shape, just different data.
+function initCuratedBucket(gridId, bootstrapKey, addedBucket) {
+  const grid = document.getElementById(gridId);
+  const curated = (window.__BOOTSTRAP__ && window.__BOOTSTRAP__[bootstrapKey]) || [];
+  curated.forEach((c) => {
     const { card, slot } = buildInstrumentCard({ symbol: c.symbol, name: c.name, flag: c.flag, removable: false });
     grid.appendChild(card);
     const panel = new IndexPanel(slot, c.symbol, c.unit ? `${c.name} ${c.unit}` : c.name);
     panels.push(panel);
   });
-  commoditiesAddedBucket.renderSaved();
+  addedBucket.renderSaved();
   applySavedOrder(grid, sortKeyFor(grid));
   makeSortable(grid, sortKeyFor(grid));
 }
@@ -1263,24 +1315,288 @@ function buildLiveTvPanel(tileId, initialSourceId) {
 
 function initLiveTv() {
   const dashboardPanels = document.getElementById('dashboard-panels');
-  if (!dashboardPanels) return null;
-
+  if (!dashboardPanels) return;
   getLiveTvTiles().forEach((tile) => {
     dashboardPanels.appendChild(buildLiveTvPanel(tile.id, tile.sourceId));
   });
+}
 
-  const addBtn = document.createElement('button');
-  addBtn.type = 'button';
-  addBtn.className = 'dashboard-panel add-panel-tile';
-  addBtn.innerHTML = '<span class="add-panel-plus">+</span><span>Add Live TV</span>';
-  addBtn.addEventListener('click', () => {
-    const newTile = buildLiveTvPanel(`livetv-${Date.now()}`, LIVETV_SOURCES[0].id);
-    dashboardPanels.insertBefore(newTile, addBtn);
-    saveLiveTvTiles();
+// ---------- Generic "+ Add Window" system ----------
+// One "+" tile, at the end of the matrix, offering every addable window
+// type through the same menu — not just Live TV. Live TV creates a tile
+// immediately; the others (Stock/Commodity/Bond/Market) open a small
+// inline search first. All resulting tiles are plain, generic
+// .dashboard-panel containers (draggable/resizable/removable the same way
+// as everything else) — the only thing that differs between them is what
+// gets built into the body.
+
+const STANDALONE_TILES_KEY = 'standalone:tiles';
+
+function getStandaloneTiles() {
+  try {
+    const list = JSON.parse(localStorage.getItem(STANDALONE_TILES_KEY));
+    return Array.isArray(list) ? list : [];
+  } catch (err) {
+    return [];
+  }
+}
+
+function saveStandaloneTilesList(list) {
+  try {
+    localStorage.setItem(STANDALONE_TILES_KEY, JSON.stringify(list));
+  } catch (err) {
+    /* localStorage unavailable — just won't persist across reloads */
+  }
+}
+
+function addStandaloneTileRecord(record) {
+  const list = getStandaloneTiles();
+  list.push(record);
+  saveStandaloneTilesList(list);
+}
+
+function removeStandaloneTileRecord(id) {
+  saveStandaloneTilesList(getStandaloneTiles().filter((t) => t.id !== id));
+}
+
+function newTileId() {
+  return `tile-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+}
+
+function createStandaloneInstrumentTile(item, dashboardPanels, addTileEl, existingId) {
+  const id = existingId || newTileId();
+  const section = document.createElement('section');
+  section.className = 'dashboard-panel';
+  section.dataset.sortId = id;
+  section.dataset.standaloneTile = 'true';
+  section.innerHTML = `
+    <div class="panel-drag-handle" draggable="true">
+      <span><span class="grip">⠿</span> ${escapeHtml(item.name || item.symbol)}</span>
+      <span class="panel-handle-actions">
+        <button class="instrument-remove" type="button" data-role="remove" title="Remove">✕</button>
+      </span>
+    </div>
+    <div class="index-card panel-body" data-role="slot"></div>
+  `;
+  dashboardPanels.insertBefore(section, addTileEl);
+
+  const slot = section.querySelector('[data-role="slot"]');
+  const panel = new IndexPanel(slot, item.symbol, item.name);
+  panels.push(panel);
+  panel.load();
+  initResizeHandle(section, 4);
+
+  section.querySelector('[data-role="remove"]').addEventListener('click', (e) => {
+    e.stopPropagation();
+    const idx = panels.indexOf(panel);
+    if (idx !== -1) panels.splice(idx, 1);
+    panel.destroy();
+    section.remove();
+    removeStandaloneTileRecord(id);
   });
-  dashboardPanels.appendChild(addBtn);
 
-  return addBtn;
+  if (!existingId) addStandaloneTileRecord({ id, kind: 'ticker', symbol: item.symbol, name: item.name });
+}
+
+function createStandaloneMarketTile(market, dashboardPanels, addTileEl, existingId) {
+  const id = existingId || newTileId();
+  const section = document.createElement('section');
+  section.className = 'dashboard-panel';
+  section.dataset.sortId = id;
+  section.dataset.standaloneTile = 'true';
+  section.innerHTML = `
+    <div class="panel-drag-handle" draggable="true">
+      <span><span class="grip">⠿</span> ${escapeHtml(market.shortName || market.name)}</span>
+      <span class="panel-handle-actions">
+        <button class="instrument-remove" type="button" data-role="remove" title="Remove">✕</button>
+      </span>
+    </div>
+    <div class="panel-body" data-role="body"></div>
+  `;
+  dashboardPanels.insertBefore(section, addTileEl);
+
+  const entry = buildMarketCard(market, false);
+  entry.autoGroup = false; // lives in its own window — tickStatuses() shouldn't relocate it into Open/Closed
+  section.querySelector('[data-role="body"]').appendChild(entry.card);
+  buildIndexPanels(market, entry.card);
+  initResizeHandle(section, 5);
+
+  section.querySelector('[data-role="remove"]').addEventListener('click', (e) => {
+    e.stopPropagation();
+    for (let i = panels.length - 1; i >= 0; i--) {
+      if (entry.card.contains(panels[i].container)) {
+        panels[i].destroy();
+        panels.splice(i, 1);
+      }
+    }
+    const si = statusEls.indexOf(entry);
+    if (si !== -1) statusEls.splice(si, 1);
+    section.remove();
+    removeStandaloneTileRecord(id);
+  });
+
+  if (!existingId) addStandaloneTileRecord({ id, kind: 'market', marketId: market.id });
+}
+
+function openInlineSearchPopover(anchorEl, { placeholder, search, onSelect }) {
+  const wrap = document.createElement('div');
+  wrap.className = 'add-window-search';
+  wrap.innerHTML = `
+    <input type="text" class="watchlist-input" placeholder="${escapeHtml(placeholder)}" autocomplete="off" />
+    <div class="watchlist-results"></div>
+  `;
+  anchorEl.appendChild(wrap);
+  const input = wrap.querySelector('input');
+  const results = wrap.querySelector('.watchlist-results');
+  input.focus();
+  let debounceTimer = null;
+
+  function renderResults(items) {
+    if (!items.length) {
+      results.innerHTML = '<div class="watchlist-result-empty">No matches</div>';
+      results.classList.add('open');
+      return;
+    }
+    results.innerHTML = items
+      .map(
+        (r, i) => `
+      <div class="watchlist-result" data-idx="${i}">
+        <span class="symbol">${escapeHtml(r.symbol)}</span>
+        <span class="name">${escapeHtml(r.name)}</span>
+        <span class="exchange">${escapeHtml(r.exchange || '')}</span>
+      </div>`
+      )
+      .join('');
+    results.classList.add('open');
+    [...results.querySelectorAll('.watchlist-result')].forEach((el, i) => {
+      el.addEventListener('click', () => {
+        onSelect(items[i]);
+        wrap.remove();
+      });
+    });
+  }
+
+  input.addEventListener('input', () => {
+    clearTimeout(debounceTimer);
+    const q = input.value.trim();
+    if (!q) {
+      results.classList.remove('open');
+      return;
+    }
+    debounceTimer = setTimeout(async () => {
+      try {
+        renderResults(await search(q));
+      } catch (err) {
+        renderResults([]);
+      }
+    }, 250);
+  });
+
+  document.addEventListener(
+    'click',
+    function onDocClick(e) {
+      if (!wrap.contains(e.target)) {
+        wrap.remove();
+        document.removeEventListener('click', onDocClick, true);
+      }
+    },
+    true
+  );
+}
+
+function searchMarketsPool(q) {
+  const pool = [
+    ...((window.__BOOTSTRAP__ && window.__BOOTSTRAP__.markets) || []),
+    ...((window.__BOOTSTRAP__ && window.__BOOTSTRAP__.marketsExtra) || [])
+  ];
+  const ql = q.toLowerCase();
+  return pool
+    .filter((m) => m.name.toLowerCase().includes(ql) || m.country.toLowerCase().includes(ql) || m.shortName.toLowerCase().includes(ql))
+    .slice(0, 8)
+    .map((m) => ({ symbol: m.shortName, name: m.name, exchange: m.country, _market: m }));
+}
+
+function initAddWindowMenu() {
+  const dashboardPanels = document.getElementById('dashboard-panels');
+  if (!dashboardPanels) return;
+
+  const tile = document.createElement('div');
+  tile.className = 'dashboard-panel add-panel-tile';
+  tile.innerHTML = `
+    <span class="add-panel-plus">+</span><span>Add Window</span>
+    <div class="add-window-menu hidden" data-role="menu">
+      <button type="button" data-type="livetv">📺 Live TV</button>
+      <button type="button" data-type="ticker">📈 Stock / Ticker</button>
+      <button type="button" data-type="commodity">🛢️ Commodity</button>
+      <button type="button" data-type="bond">🏦 Bond</button>
+      <button type="button" data-type="market">🌍 Market</button>
+    </div>
+  `;
+  const menu = tile.querySelector('[data-role="menu"]');
+
+  tile.addEventListener('click', (e) => {
+    if (e.target.closest('[data-role="menu"]')) return;
+    menu.classList.toggle('hidden');
+  });
+
+  const searchLabels = {
+    ticker: 'a stock, ETF, or index…',
+    commodity: 'a commodity or future…',
+    bond: 'a bond or yield ETF…'
+  };
+
+  menu.querySelectorAll('button').forEach((btn) => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      menu.classList.add('hidden');
+      const type = btn.dataset.type;
+
+      if (type === 'livetv') {
+        const newTile = buildLiveTvPanel(newTileId(), LIVETV_SOURCES[0].id);
+        dashboardPanels.insertBefore(newTile, tile);
+        saveLiveTvTiles();
+        return;
+      }
+
+      if (type === 'market') {
+        openInlineSearchPopover(tile, {
+          placeholder: 'Search any exchange…',
+          search: searchMarketsPool,
+          onSelect: (item) => createStandaloneMarketTile(item._market, dashboardPanels, tile)
+        });
+        return;
+      }
+
+      openInlineSearchPopover(tile, {
+        placeholder: `Search ${searchLabels[type]}`,
+        search: tickerSearch,
+        onSelect: (item) => createStandaloneInstrumentTile(item, dashboardPanels, tile)
+      });
+    });
+  });
+
+  document.addEventListener('click', (e) => {
+    if (!tile.contains(e.target)) menu.classList.add('hidden');
+  });
+
+  // The "+" tile must be attached before rebuilding saved standalone tiles —
+  // insertBefore(node, tile) requires `tile` to already be a child.
+  dashboardPanels.appendChild(tile);
+
+  const marketsPool = [
+    ...((window.__BOOTSTRAP__ && window.__BOOTSTRAP__.markets) || []),
+    ...((window.__BOOTSTRAP__ && window.__BOOTSTRAP__.marketsExtra) || [])
+  ];
+  getStandaloneTiles().forEach((rec) => {
+    if (rec.kind === 'market') {
+      const market = marketsPool.find((m) => m.id === rec.marketId);
+      if (market) createStandaloneMarketTile(market, dashboardPanels, tile, rec.id);
+    } else {
+      createStandaloneInstrumentTile({ symbol: rec.symbol, name: rec.name }, dashboardPanels, tile, rec.id);
+    }
+  });
+
+  return tile;
 }
 
 // ---------- Detail modal (double-click any instrument tile) ----------
@@ -1414,12 +1730,16 @@ const LAYOUT_STATE_KEYS = [
   'order:markets-open',
   'order:markets-closed',
   'order:commodities',
+  'order:bonds',
   'order:watchlist',
   'watchlist:tickers',
   'commodities:added',
+  'bonds:added',
   MARKETS_EXTRA_KEY,
   'livetv:tiles',
-  PANEL_SPAN_KEY
+  STANDALONE_TILES_KEY,
+  PANEL_SPAN_KEY,
+  LAYOUT_TEMPLATE_KEY
 ];
 
 function getLayoutList() {
@@ -1527,6 +1847,7 @@ function renderLayoutTabs() {
 }
 
 renderLayoutTabs();
+initLayoutTemplatePicker();
 const layoutsSaveBtn = document.getElementById('layouts-save-btn');
 if (layoutsSaveBtn) {
   layoutsSaveBtn.addEventListener('click', () => {
@@ -1653,7 +1974,8 @@ async function init() {
     tickStatuses();
     initMarketsSearch();
 
-    initCommodities();
+    initCuratedBucket('commodities-grid', 'commodities', commoditiesAddedBucket);
+    initCuratedBucket('bonds-grid', 'bonds', bondsAddedBucket);
     initWatchlist();
     initSearchAdd('watchlist-input', 'watchlist-results', {
       search: tickerSearch,
@@ -1663,21 +1985,29 @@ async function init() {
       search: tickerSearch,
       onSelect: (item) => commoditiesAddedBucket.addItem({ symbol: item.symbol, name: item.name })
     });
-    const addLiveTvBtn = initLiveTv();
+    initSearchAdd('bonds-input', 'bonds-results', {
+      search: tickerSearch,
+      onSelect: (item) => bondsAddedBucket.addItem({ symbol: item.symbol, name: item.name })
+    });
+    initLiveTv();
+    const addWindowBtn = initAddWindowMenu();
 
     // Dashboard-level reordering (drag a panel by its grip handle). The
-    // "+" add-tile ghost must always stay last — applySavedOrder moves
+    // "+" add-window ghost must always stay last — applySavedOrder moves
     // saved-order panels to the end in sequence, which would otherwise
     // shuffle it out of trailing position, so re-pin it after.
     const dashboardPanels = document.getElementById('dashboard-panels');
     [...dashboardPanels.querySelectorAll('.dashboard-panel[data-sort-id]')].forEach((p) => {
-      if (!p.dataset.livetvTile) initResizeHandle(p, 12); // core panels default to full width
+      // Core panels default to full width; standalone tiles already got
+      // initResizeHandle called (with their own default) when they were built.
+      if (!p.dataset.livetvTile && !p.dataset.standaloneTile) initResizeHandle(p, 12);
     });
     applySavedOrder(dashboardPanels, sortKeyFor(dashboardPanels));
-    if (addLiveTvBtn) dashboardPanels.appendChild(addLiveTvBtn);
+    if (addWindowBtn) dashboardPanels.appendChild(addWindowBtn);
+    applyLayoutTemplate(getLayoutTemplate());
     makeSortable(dashboardPanels, sortKeyFor(dashboardPanels), {
       handleSelector: '.panel-drag-handle',
-      afterReorder: () => addLiveTvBtn && dashboardPanels.appendChild(addLiveTvBtn)
+      afterReorder: () => addWindowBtn && dashboardPanels.appendChild(addWindowBtn)
     });
 
     // Refresh live prices/charts/FX as often as the free API comfortably allows

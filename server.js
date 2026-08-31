@@ -6,6 +6,7 @@ const markets = require('./data/markets.json');
 const marketsExtra = require('./data/markets-extra.json');
 const fxCurrencies = require('./data/fx.json');
 const commodities = require('./data/commodities.json');
+const bonds = require('./data/bonds.json');
 
 const app = express();
 const PORT = process.env.PORT || 4173;
@@ -19,7 +20,8 @@ const bootstrapScript = `<script>window.__BOOTSTRAP__=${JSON.stringify({
   markets,
   marketsExtra,
   fx: fxCurrencies,
-  commodities
+  commodities,
+  bonds
 })};</script>`;
 const indexHtml = indexTemplate.replace('</head>', `${bootstrapScript}</head>`);
 
@@ -54,6 +56,10 @@ app.get('/api/fx', (req, res) => {
 
 app.get('/api/commodities', (req, res) => {
   res.json(commodities);
+});
+
+app.get('/api/bonds', (req, res) => {
+  res.json(bonds);
 });
 
 // Ticker search for the "add a stock" watchlist feature — proxies Yahoo
