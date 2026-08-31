@@ -1,0 +1,8 @@
+[
+  { "symbol": "GC=F", "name": "Gold", "flag": "🥇", "unit": "/oz" },
+  { "symbol": "SI=F", "name": "Silver", "flag": "🥈", "unit": "/oz" },
+  { "symbol": "CL=F", "name": "Crude Oil (WTI)", "flag": "🛢️", "unit": "/bbl" },
+  { "symbol": "BZ=F", "name": "Brent Crude", "flag": "🛢️", "unit": "/bbl" },
+  { "symbol": "NG=F", "name": "Natural Gas", "flag": "🔥", "unit": "/MMBtu" },
+  { "symbol": "HG=F", "name": "Copper", "flag": "🔶", "unit": "/lb" }
+]

@@ -4,6 +4,7 @@ const fs = require('fs');
 const { XMLParser } = require('fast-xml-parser');
 const markets = require('./data/markets.json');
 const fxCurrencies = require('./data/fx.json');
+const commodities = require('./data/commodities.json');
 
 const app = express();
 const PORT = process.env.PORT || 4173;
@@ -15,7 +16,8 @@ const PORT = process.env.PORT || 4173;
 const indexTemplate = fs.readFileSync(path.join(__dirname, 'public', 'index.html'), 'utf8');
 const bootstrapScript = `<script>window.__BOOTSTRAP__=${JSON.stringify({
   markets,
-  fx: fxCurrencies
+  fx: fxCurrencies,
+  commodities
 })};</script>`;
 const indexHtml = indexTemplate.replace('</head>', `${bootstrapScript}</head>`);
 
@@ -42,6 +44,37 @@ app.get('/api/markets', (req, res) => {
 
 app.get('/api/fx', (req, res) => {
   res.json(fxCurrencies);
+});
+
+app.get('/api/commodities', (req, res) => {
+  res.json(commodities);
+});
+
+// Ticker search for the "add a stock" watchlist feature — proxies Yahoo
+// Finance's unofficial search endpoint (same free, no-key deal as everything
+// else) so the browser doesn't hit CORS.
+app.get('/api/search', async (req, res) => {
+  const q = (req.query.q || '').trim();
+  if (!q) return res.json([]);
+
+  try {
+    const url = `https://query1.finance.yahoo.com/v1/finance/search?q=${encodeURIComponent(q)}&quotesCount=8&newsCount=0`;
+    const r = await fetch(url, { headers: YF_HEADERS });
+    if (!r.ok) throw new Error(`Yahoo Finance responded ${r.status}`);
+    const json = await r.json();
+    const quotes = Array.isArray(json?.quotes) ? json.quotes : [];
+    const results = quotes
+      .filter((q) => q.symbol && (q.shortname || q.longname))
+      .map((q) => ({
+        symbol: q.symbol,
+        name: q.shortname || q.longname,
+        exchange: q.exchDisp || q.exchange || null,
+        type: q.typeDisp || q.quoteType || null
+      }));
+    res.json(results);
+  } catch (err) {
+    res.status(502).json({ error: err.message });
+  }
 });
 
 // Finance/econ headline ticker — no free public RSS survives from Reuters or
@@ -199,9 +232,14 @@ app.get('/api/chart/:symbol', async (req, res) => {
       changePercent,
       dayHigh: meta.regularMarketDayHigh ?? null,
       dayLow: meta.regularMarketDayLow ?? null,
+      fiftyTwoWeekHigh: meta.fiftyTwoWeekHigh ?? null,
+      fiftyTwoWeekLow: meta.fiftyTwoWeekLow ?? null,
+      volume: meta.regularMarketVolume ?? null,
       marketTime: meta.regularMarketTime ?? null,
       marketState: meta.marketState || null,
       exchangeName: meta.exchangeName || null,
+      fullExchangeName: meta.fullExchangeName || null,
+      longName: meta.longName || meta.shortName || null,
       points
     };
 

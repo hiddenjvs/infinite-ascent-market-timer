@@ -45,30 +45,86 @@
     </div>
   </header>
 
-  <main id="markets-main" class="markets-main">
-    <p class="loading">Loading market data…</p>
-  </main>
+  <p class="reorg-hint">Drag a panel by its <span class="grip">⠿</span> handle to reorganize your dashboard — layout is saved locally.</p>
 
-  <section class="fx-section">
-    <div class="fx-bar">
-      <h2 class="fx-heading">FX Cross Rates</h2>
-      <span class="live-badge">
-        <span class="live-dot" data-role="fx-live-dot"></span>
-        <span class="live-text" data-role="fx-live-text">SYNCING</span>
-      </span>
-    </div>
-    <p class="fx-subtext">Row currency priced in column currency — 1 ROW = x.xxxx COL</p>
-    <div class="fx-table-wrap" id="fx-matrix-wrap">
-      <p class="loading">Loading FX matrix…</p>
-    </div>
-  </section>
+  <div id="dashboard-panels">
+    <section class="dashboard-panel" data-sort-id="markets">
+      <div class="panel-drag-handle" draggable="true"><span class="grip">⠿</span> MARKETS</div>
+      <main id="markets-main" class="markets-main">
+        <p class="loading">Loading market data…</p>
+      </main>
+    </section>
+
+    <section class="dashboard-panel" data-sort-id="commodities">
+      <div class="panel-drag-handle" draggable="true"><span class="grip">⠿</span> COMMODITIES</div>
+      <div class="commodities-main">
+        <div class="commodities-grid" id="commodities-grid"></div>
+      </div>
+    </section>
+
+    <section class="dashboard-panel" data-sort-id="watchlist">
+      <div class="panel-drag-handle" draggable="true"><span class="grip">⠿</span> WATCHLIST</div>
+      <div class="watchlist-main">
+        <div class="watchlist-search">
+          <input
+            type="text"
+            id="watchlist-input"
+            class="watchlist-input"
+            placeholder="Add a ticker or company (e.g. AAPL, Tesla)…"
+            autocomplete="off"
+          />
+          <div class="watchlist-results" id="watchlist-results"></div>
+        </div>
+        <div class="watchlist-grid" id="watchlist-grid"></div>
+      </div>
+    </section>
+
+    <section class="dashboard-panel" data-sort-id="fx">
+      <div class="panel-drag-handle" draggable="true"><span class="grip">⠿</span> FX</div>
+      <div class="fx-section">
+        <div class="fx-bar">
+          <h2 class="fx-heading">FX Cross Rates</h2>
+          <span class="live-badge">
+            <span class="live-dot" data-role="fx-live-dot"></span>
+            <span class="live-text" data-role="fx-live-text">SYNCING</span>
+          </span>
+        </div>
+        <p class="fx-subtext">Row currency priced in column currency — 1 ROW = x.xxxx COL</p>
+        <div class="fx-table-wrap" id="fx-matrix-wrap">
+          <p class="loading">Loading FX matrix…</p>
+        </div>
+      </div>
+    </section>
+  </div>
 
   <footer class="page-footer">
     <p>
       Prices via Yahoo Finance (delayed, unofficial, free). Countdowns use regular trading
-      hours only — exchange holidays are not accounted for.
+      hours only — exchange holidays are not accounted for. Double-click any index/commodity/
+      watchlist tile for details.
     </p>
   </footer>
+
+  <div class="modal-overlay hidden" id="detail-modal">
+    <div class="modal-box">
+      <div class="modal-head">
+        <div>
+          <div class="modal-title" id="modal-title">—</div>
+          <div class="modal-subtitle" id="modal-subtitle">—</div>
+        </div>
+        <button class="modal-close" id="modal-close" aria-label="Close" type="button">✕</button>
+      </div>
+      <div class="modal-price-row">
+        <span class="modal-price" id="modal-price">—</span>
+        <span class="modal-change" id="modal-change">—</span>
+      </div>
+      <div class="modal-range-controls" id="modal-range-controls"></div>
+      <div class="modal-chart-wrap">
+        <div class="modal-chart-canvas" id="modal-chart-canvas"></div>
+      </div>
+      <div class="modal-stats" id="modal-stats"></div>
+    </div>
+  </div>
 
   <script src="app.js"></script>
 </body>

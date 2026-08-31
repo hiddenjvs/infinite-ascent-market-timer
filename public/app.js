@@ -194,6 +194,51 @@ function formatPrice(price, currency) {
   }) + (currency ? ` ${currency}` : '');
 }
 
+// Shared by every mini chart (index/commodity/watchlist tiles) and the detail modal.
+function createPriceChart(container) {
+  const chart = LightweightCharts.createChart(container, {
+    layout: {
+      background: { type: 'solid', color: 'transparent' },
+      textColor: '#8a93a6',
+      fontSize: 10
+    },
+    grid: {
+      vertLines: { visible: false },
+      horzLines: { color: 'rgba(255,255,255,0.04)' }
+    },
+    rightPriceScale: { borderVisible: false },
+    timeScale: { borderVisible: false, timeVisible: true, secondsVisible: false },
+    crosshair: { mode: LightweightCharts.CrosshairMode.Normal },
+    handleScroll: true,
+    handleScale: true
+  });
+
+  const series = chart.addAreaSeries({
+    lineColor: '#5fb3ff',
+    topColor: 'rgba(95,179,255,0.35)',
+    bottomColor: 'rgba(95,179,255,0.02)',
+    lineWidth: 2,
+    priceLineVisible: false
+  });
+
+  chart.applyOptions({ width: container.clientWidth, height: container.clientHeight });
+  return { chart, series };
+}
+
+function applyTrendColors(series, change) {
+  const trendUp = (change ?? 0) >= 0;
+  const trendColor = trendUp ? '#3ecf8e' : '#f0616d';
+  const trendFill = trendUp ? 'rgba(62,207,142,' : 'rgba(240,97,109,';
+  series.applyOptions({
+    lineColor: trendColor,
+    topColor: trendFill + '0.35)',
+    bottomColor: trendFill + '0.02)',
+    priceLineColor: trendColor,
+    lastValueVisible: true
+  });
+  return trendColor;
+}
+
 class IndexPanel {
   constructor(container, symbol, name) {
     this.symbol = symbol;
@@ -225,6 +270,9 @@ class IndexPanel {
     this.currency = '';
     this.buildRangeButtons();
     this.buildChart();
+
+    container.title = 'Double-click for details';
+    container.addEventListener('dblclick', () => openDetailModal(this.symbol, this.name));
   }
 
   buildRangeButtons() {
@@ -245,35 +293,9 @@ class IndexPanel {
   }
 
   buildChart() {
-    this.chart = LightweightCharts.createChart(this.chartEl, {
-      layout: {
-        background: { type: 'solid', color: 'transparent' },
-        textColor: '#8a93a6',
-        fontSize: 10
-      },
-      grid: {
-        vertLines: { visible: false },
-        horzLines: { color: 'rgba(255,255,255,0.04)' }
-      },
-      rightPriceScale: { borderVisible: false },
-      timeScale: { borderVisible: false, timeVisible: true, secondsVisible: false },
-      crosshair: { mode: LightweightCharts.CrosshairMode.Normal },
-      handleScroll: true,
-      handleScale: true
-    });
-
-    this.series = this.chart.addAreaSeries({
-      lineColor: '#5fb3ff',
-      topColor: 'rgba(95,179,255,0.35)',
-      bottomColor: 'rgba(95,179,255,0.02)',
-      lineWidth: 2,
-      priceLineVisible: false
-    });
-
-    this.chart.applyOptions({
-      width: this.chartEl.clientWidth,
-      height: this.chartEl.clientHeight
-    });
+    const { chart, series } = createPriceChart(this.chartEl);
+    this.chart = chart;
+    this.series = series;
 
     let lastW = this.chartEl.clientWidth;
     let lastH = this.chartEl.clientHeight;
@@ -287,6 +309,7 @@ class IndexPanel {
       }
     });
     ro.observe(this.chartEl);
+    this.resizeObserver = ro;
 
     this.chart.subscribeCrosshairMove((param) => {
       if (!param || !param.time || !param.seriesData || !param.seriesData.get(this.series)) {
@@ -338,16 +361,7 @@ class IndexPanel {
       this.series.setData(seriesData);
       this.chart.timeScale().fitContent();
 
-      const trendUp = (data.change ?? 0) >= 0;
-      const trendColor = trendUp ? '#3ecf8e' : '#f0616d';
-      const trendFill = trendUp ? 'rgba(62,207,142,' : 'rgba(240,97,109,';
-      this.series.applyOptions({
-        lineColor: trendColor,
-        topColor: trendFill + '0.35)',
-        bottomColor: trendFill + '0.02)',
-        priceLineColor: trendColor,
-        lastValueVisible: true
-      });
+      const trendColor = applyTrendColors(this.series, data.change);
       if (seriesData.length && typeof this.series.setMarkers === 'function') {
         const last = seriesData[seriesData.length - 1];
         this.series.setMarkers([
@@ -363,6 +377,16 @@ class IndexPanel {
       return false;
     }
   }
+
+  // Called when a watchlist entry is removed — releases the chart instance
+  // and its ResizeObserver rather than leaking them.
+  destroy() {
+    if (this.resizeObserver) this.resizeObserver.disconnect();
+    if (this.chart) {
+      this.chart.remove();
+      this.chart = null;
+    }
+  }
 }
 
 // ---------- Market cards ----------
@@ -373,9 +397,10 @@ let openGrid, closedGrid, openCountEl, closedCountEl;
 
 function buildMarketCard(market) {
   const card = document.createElement('div');
-  card.className = 'market-card';
+  card.className = 'market-card sortable-item';
+  card.dataset.sortId = market.id;
   card.innerHTML = `
-    <div class="market-card-head">
+    <div class="market-card-head" draggable="true">
       <div class="market-title">
         <span class="market-flag">${market.flag}</span>
         <div>
@@ -439,7 +464,11 @@ function tickStatuses() {
     if (status.isOpen !== entry.isOpen) {
       entry.isOpen = status.isOpen;
       entry.nextEvent = status.target.getTime();
-      (status.isOpen ? openGrid : closedGrid).appendChild(entry.card);
+      const targetGrid = status.isOpen ? openGrid : closedGrid;
+      targetGrid.appendChild(entry.card);
+      // Land it in its previously-saved manual position within the new
+      // group, rather than always at the end.
+      applySavedOrder(targetGrid, sortKeyFor(targetGrid));
       groupsChanged = true;
     } else {
       entry.nextEvent = status.target.getTime();
@@ -449,6 +478,104 @@ function tickStatuses() {
   if (groupsChanged) updateCounts();
 }
 setInterval(tickStatuses, 1000);
+
+// ---------- Drag-to-reorder (dashboard panels + card grids) ----------
+// A generic sortable-list implementation using native HTML5 drag-and-drop,
+// reused for the top-level panel stack (Markets/Commodities/Watchlist/FX)
+// and for every card grid (market cards, commodities, watchlist tickers).
+// Order is persisted to localStorage so the layout survives a reload.
+
+function sortKeyFor(el) {
+  if (el === openGrid) return 'order:markets-open';
+  if (el === closedGrid) return 'order:markets-closed';
+  if (el.id === 'commodities-grid') return 'order:commodities';
+  if (el.id === 'watchlist-grid') return 'order:watchlist';
+  if (el.id === 'dashboard-panels') return 'order:dashboard-panels';
+  return null;
+}
+
+function persistOrder(container, storageKey) {
+  if (!storageKey) return;
+  const order = [...container.children].map((c) => c.dataset.sortId).filter(Boolean);
+  try {
+    localStorage.setItem(storageKey, JSON.stringify(order));
+  } catch (err) {
+    /* localStorage unavailable (private mode, quota) — layout just won't persist */
+  }
+}
+
+function applySavedOrder(container, storageKey) {
+  if (!storageKey) return;
+  let order;
+  try {
+    order = JSON.parse(localStorage.getItem(storageKey));
+  } catch (err) {
+    order = null;
+  }
+  if (!Array.isArray(order) || !order.length) return;
+  const byId = new Map([...container.children].map((c) => [c.dataset.sortId, c]));
+  order.forEach((id) => {
+    const el = byId.get(id);
+    if (el) container.appendChild(el);
+  });
+}
+
+function makeSortable(container, storageKey, { handleSelector } = {}) {
+  let dragEl = null;
+  const draggingClass = container.id === 'dashboard-panels' ? 'panel-dragging' : 'item-dragging';
+
+  function itemsExcept(el) {
+    return [...container.children].filter((c) => c !== el);
+  }
+
+  function closestItem(x, y) {
+    let closest = null;
+    let closestDist = Infinity;
+    itemsExcept(dragEl).forEach((el) => {
+      const r = el.getBoundingClientRect();
+      const cx = r.left + r.width / 2;
+      const cy = r.top + r.height / 2;
+      const dist = (x - cx) ** 2 + (y - cy) ** 2;
+      if (dist < closestDist) {
+        closestDist = dist;
+        closest = el;
+      }
+    });
+    return closest;
+  }
+
+  container.addEventListener('dragstart', (e) => {
+    const handle = handleSelector ? e.target.closest(handleSelector) : e.target.closest('.sortable-item, [data-sort-id]');
+    if (!handle) return;
+    const item = handle.closest('[data-sort-id]');
+    if (!item || item.parentElement !== container) return;
+    dragEl = item;
+    dragEl.classList.add(draggingClass);
+    e.dataTransfer.effectAllowed = 'move';
+    try {
+      e.dataTransfer.setData('text/plain', dragEl.dataset.sortId || '');
+    } catch (err) {
+      /* Safari sometimes throws on setData with certain MIME types — harmless to skip */
+    }
+  });
+
+  container.addEventListener('dragover', (e) => {
+    if (!dragEl) return;
+    e.preventDefault();
+    const target = closestItem(e.clientX, e.clientY);
+    if (!target || target === dragEl) return;
+    const r = target.getBoundingClientRect();
+    const before = e.clientY < r.top + r.height / 2;
+    container.insertBefore(dragEl, before ? target : target.nextSibling);
+  });
+
+  container.addEventListener('dragend', () => {
+    if (!dragEl) return;
+    dragEl.classList.remove(draggingClass);
+    dragEl = null;
+    persistOrder(container, storageKey);
+  });
+}
 
 // ---------- FX cross-rate matrix ----------
 // Classic Bloomberg FXC-style matrix: currencies on both axes, diagonal blank,
@@ -597,6 +724,285 @@ async function refreshAll() {
   pulseLogo();
 }
 
+// ---------- Commodities & Watchlist ----------
+// Both reuse IndexPanel for their live chart/price tile — a commodity or a
+// watchlist stock is just another Yahoo Finance symbol, same as an index.
+// Their panels are pushed into the shared `panels` array so refreshAll()
+// above picks them up automatically on the same 20s cycle.
+
+function buildInstrumentCard({ symbol, name, flag, removable }) {
+  const card = document.createElement('div');
+  card.className = 'instrument-card sortable-item';
+  card.dataset.sortId = symbol;
+  card.innerHTML = `
+    <div class="instrument-head" draggable="true">
+      <div class="instrument-title">
+        <span class="flag">${flag || '📈'}</span>
+        <span class="name">${escapeHtml(name)}</span>
+      </div>
+      ${removable ? '<button class="instrument-remove" type="button" title="Remove" data-role="remove">✕</button>' : ''}
+    </div>
+    <div class="index-card" data-role="slot"></div>
+  `;
+  return { card, slot: card.querySelector('[data-role="slot"]') };
+}
+
+function initCommodities() {
+  const grid = document.getElementById('commodities-grid');
+  const commodities = (window.__BOOTSTRAP__ && window.__BOOTSTRAP__.commodities) || [];
+  commodities.forEach((c) => {
+    const { card, slot } = buildInstrumentCard({ symbol: c.symbol, name: c.name, flag: c.flag, removable: false });
+    grid.appendChild(card);
+    const panel = new IndexPanel(slot, c.symbol, c.unit ? `${c.name} ${c.unit}` : c.name);
+    panels.push(panel);
+  });
+  applySavedOrder(grid, sortKeyFor(grid));
+  makeSortable(grid, sortKeyFor(grid));
+}
+
+const WATCHLIST_KEY = 'watchlist:tickers';
+const watchlistPanelsBySymbol = new Map();
+
+function getWatchlist() {
+  try {
+    const list = JSON.parse(localStorage.getItem(WATCHLIST_KEY));
+    return Array.isArray(list) ? list : [];
+  } catch (err) {
+    return [];
+  }
+}
+
+function saveWatchlist(list) {
+  try {
+    localStorage.setItem(WATCHLIST_KEY, JSON.stringify(list));
+  } catch (err) {
+    /* localStorage unavailable — watchlist just won't persist across reloads */
+  }
+}
+
+function addToWatchlist(item) {
+  const list = getWatchlist();
+  if (list.some((x) => x.symbol === item.symbol)) return;
+  list.push(item);
+  saveWatchlist(list);
+  renderWatchlistItem(item);
+}
+
+function removeFromWatchlist(symbol) {
+  saveWatchlist(getWatchlist().filter((x) => x.symbol !== symbol));
+
+  const panel = watchlistPanelsBySymbol.get(symbol);
+  if (panel) {
+    const idx = panels.indexOf(panel);
+    if (idx !== -1) panels.splice(idx, 1);
+    watchlistPanelsBySymbol.delete(symbol);
+    panel.destroy();
+  }
+
+  const grid = document.getElementById('watchlist-grid');
+  const card = [...grid.children].find((c) => c.dataset.sortId === symbol);
+  if (card) card.remove();
+}
+
+function renderWatchlistItem(item) {
+  const grid = document.getElementById('watchlist-grid');
+  const { card, slot } = buildInstrumentCard({ symbol: item.symbol, name: item.name, flag: '📈', removable: true });
+  grid.appendChild(card);
+
+  const panel = new IndexPanel(slot, item.symbol, item.name);
+  panels.push(panel);
+  watchlistPanelsBySymbol.set(item.symbol, panel);
+  panel.load();
+
+  card.querySelector('[data-role="remove"]').addEventListener('click', (e) => {
+    e.stopPropagation();
+    removeFromWatchlist(item.symbol);
+  });
+}
+
+function initWatchlist() {
+  const grid = document.getElementById('watchlist-grid');
+  getWatchlist().forEach((item) => renderWatchlistItem(item));
+  applySavedOrder(grid, sortKeyFor(grid));
+  makeSortable(grid, sortKeyFor(grid));
+}
+
+function initWatchlistSearch() {
+  const input = document.getElementById('watchlist-input');
+  const results = document.getElementById('watchlist-results');
+  let debounceTimer = null;
+
+  function closeResults() {
+    results.classList.remove('open');
+    results.innerHTML = '';
+  }
+
+  function renderResults(items) {
+    if (!items.length) {
+      results.innerHTML = '<div class="watchlist-result-empty">No matches</div>';
+      results.classList.add('open');
+      return;
+    }
+    results.innerHTML = items
+      .map(
+        (r, i) => `
+      <div class="watchlist-result" data-idx="${i}">
+        <span class="symbol">${escapeHtml(r.symbol)}</span>
+        <span class="name">${escapeHtml(r.name)}</span>
+        <span class="exchange">${escapeHtml(r.exchange || '')}</span>
+      </div>`
+      )
+      .join('');
+    results.classList.add('open');
+    [...results.querySelectorAll('.watchlist-result')].forEach((el, i) => {
+      el.addEventListener('click', () => {
+        addToWatchlist({ symbol: items[i].symbol, name: items[i].name });
+        input.value = '';
+        closeResults();
+      });
+    });
+  }
+
+  input.addEventListener('input', () => {
+    clearTimeout(debounceTimer);
+    const q = input.value.trim();
+    if (!q) {
+      closeResults();
+      return;
+    }
+    debounceTimer = setTimeout(async () => {
+      try {
+        const res = await fetch(`/api/search?q=${encodeURIComponent(q)}`);
+        const items = await res.json();
+        renderResults(Array.isArray(items) ? items : []);
+      } catch (err) {
+        renderResults([]);
+      }
+    }, 300);
+  });
+
+  document.addEventListener('click', (e) => {
+    if (!e.target.closest('.watchlist-search')) closeResults();
+  });
+}
+
+// ---------- Detail modal (double-click any instrument tile) ----------
+
+let modalChart = null;
+let modalSeries = null;
+let modalSymbol = null;
+let modalRangeIdx = 0;
+
+function buildModalRangeButtons() {
+  const wrap = document.getElementById('modal-range-controls');
+  wrap.innerHTML = '';
+  RANGES.forEach((r, i) => {
+    const btn = document.createElement('button');
+    btn.className = 'range-btn' + (i === modalRangeIdx ? ' active' : '');
+    btn.textContent = r.key;
+    btn.addEventListener('click', () => {
+      modalRangeIdx = i;
+      [...wrap.children].forEach((c, ci) => c.classList.toggle('active', ci === i));
+      loadModalData();
+    });
+    wrap.appendChild(btn);
+  });
+}
+
+function renderModalStats(data) {
+  const wrap = document.getElementById('modal-stats');
+  const stats = [
+    ['Day High', formatPrice(data.dayHigh, data.currency)],
+    ['Day Low', formatPrice(data.dayLow, data.currency)],
+    ['52W High', formatPrice(data.fiftyTwoWeekHigh, data.currency)],
+    ['52W Low', formatPrice(data.fiftyTwoWeekLow, data.currency)],
+    ['Prev Close', formatPrice(data.previousClose, data.currency)],
+    ['Exchange', data.fullExchangeName || data.exchangeName || '—']
+  ];
+  if (data.volume != null) stats.push(['Volume', data.volume.toLocaleString()]);
+
+  wrap.innerHTML = stats
+    .map(
+      ([label, value]) => `
+    <div class="modal-stat">
+      <div class="modal-stat-label">${label}</div>
+      <div class="modal-stat-value">${escapeHtml(String(value))}</div>
+    </div>`
+    )
+    .join('');
+}
+
+async function loadModalData() {
+  const r = RANGES[modalRangeIdx];
+  const priceEl = document.getElementById('modal-price');
+  const changeEl = document.getElementById('modal-change');
+  try {
+    const res = await fetch(`/api/chart/${encodeURIComponent(modalSymbol)}?range=${r.range}&interval=${r.interval}`);
+    const data = await res.json();
+    if (data.error) throw new Error(data.error);
+
+    priceEl.textContent = formatPrice(data.price, data.currency);
+    const changeCls = data.change > 0 ? 'up' : data.change < 0 ? 'down' : 'flat';
+    const sign = data.change > 0 ? '+' : '';
+    changeEl.className = `modal-change ${changeCls}`;
+    changeEl.textContent =
+      data.change != null ? `${sign}${data.change.toFixed(2)} (${sign}${data.changePercent.toFixed(2)}%)` : '—';
+
+    if (modalSeries && modalChart) {
+      const seriesData = data.points.map((p) => ({ time: p.time, value: p.price }));
+      modalSeries.setData(seriesData);
+      modalChart.timeScale().fitContent();
+      applyTrendColors(modalSeries, data.change);
+    }
+
+    renderModalStats(data);
+  } catch (err) {
+    priceEl.textContent = 'N/A';
+    changeEl.textContent = 'data unavailable';
+    changeEl.className = 'modal-change flat';
+  }
+}
+
+function openDetailModal(symbol, name) {
+  modalSymbol = symbol;
+  modalRangeIdx = 0;
+
+  document.getElementById('modal-title').textContent = name;
+  document.getElementById('modal-subtitle').textContent = symbol;
+  document.getElementById('detail-modal').classList.remove('hidden');
+
+  const canvas = document.getElementById('modal-chart-canvas');
+  canvas.innerHTML = '';
+  if (modalChart) {
+    modalChart.remove();
+    modalChart = null;
+    modalSeries = null;
+  }
+  const built = createPriceChart(canvas);
+  modalChart = built.chart;
+  modalSeries = built.series;
+
+  buildModalRangeButtons();
+  loadModalData();
+}
+
+function closeDetailModal() {
+  document.getElementById('detail-modal').classList.add('hidden');
+  if (modalChart) {
+    modalChart.remove();
+    modalChart = null;
+    modalSeries = null;
+  }
+}
+
+document.getElementById('modal-close').addEventListener('click', closeDetailModal);
+document.getElementById('detail-modal').addEventListener('click', (e) => {
+  if (e.target.id === 'detail-modal') closeDetailModal();
+});
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') closeDetailModal();
+});
+
 // ---------- Market news ticker ----------
 // One headline shown at a time, rolling to the next on the SAME 20s cycle as
 // refreshAll() (not a separate timer) so it's synced with the market/FX pulse.
@@ -689,8 +1095,21 @@ async function init() {
       (status.isOpen ? openGrid : closedGrid).appendChild(entry.card);
       buildIndexPanels(market, entry.card);
     });
+    applySavedOrder(openGrid, sortKeyFor(openGrid));
+    applySavedOrder(closedGrid, sortKeyFor(closedGrid));
+    makeSortable(openGrid, sortKeyFor(openGrid));
+    makeSortable(closedGrid, sortKeyFor(closedGrid));
     updateCounts();
     tickStatuses();
+
+    initCommodities();
+    initWatchlist();
+    initWatchlistSearch();
+
+    // Dashboard-level reordering (drag a panel by its grip handle).
+    const dashboardPanels = document.getElementById('dashboard-panels');
+    applySavedOrder(dashboardPanels, sortKeyFor(dashboardPanels));
+    makeSortable(dashboardPanels, sortKeyFor(dashboardPanels), { handleSelector: '.panel-drag-handle' });
 
     // Refresh live prices/charts/FX as often as the free API comfortably allows
     // (backend caches responses for ~20s, so this stays close to real-time).

@@ -390,7 +390,10 @@ a.headline-text:hover {
   align-items: flex-start;
   justify-content: space-between;
   gap: 8px;
+  cursor: grab;
 }
+
+.market-card-head:active { cursor: grabbing; }
 
 .market-title {
   display: flex;
@@ -753,4 +756,402 @@ a.headline-text:hover {
   padding: 10px 18px 20px;
   color: var(--text-faint);
   font-size: 11px;
+}
+
+/* ============================================================
+   Reorderable dashboard panels (drag by the grip handle)
+   ============================================================ */
+
+.reorg-hint {
+  margin: 6px 16px 0;
+  font-size: 10.5px;
+  color: var(--text-faint);
+}
+
+.reorg-hint .grip {
+  color: var(--text-dim);
+  letter-spacing: -1px;
+}
+
+#dashboard-panels {
+  display: flex;
+  flex-direction: column;
+}
+
+.dashboard-panel {
+  transition: opacity 150ms ease, transform 150ms ease;
+}
+
+.dashboard-panel.panel-dragging {
+  opacity: 0.4;
+}
+
+.dashboard-panel.panel-drop-target {
+  outline: 1.5px dashed var(--accent);
+  outline-offset: -1.5px;
+  border-radius: var(--radius-lg);
+}
+
+.panel-drag-handle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 10px 16px 2px;
+  padding: 3px 8px;
+  width: fit-content;
+  font-family: var(--mono);
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  color: var(--text-faint);
+  border-radius: var(--radius-sm);
+  cursor: grab;
+  user-select: none;
+  transition: background-color 150ms var(--ease-spring), color 150ms var(--ease-spring);
+}
+
+.panel-drag-handle:hover {
+  background: var(--surface-2);
+  color: var(--text-dim);
+}
+
+.panel-drag-handle:active { cursor: grabbing; }
+
+.panel-drag-handle .grip {
+  letter-spacing: -1px;
+  font-size: 12px;
+}
+
+/* ============================================================
+   Sortable grid items (market/commodity/watchlist cards)
+   ============================================================ */
+
+.sortable-item {
+  cursor: grab;
+}
+
+.sortable-item.item-dragging {
+  opacity: 0.35;
+}
+
+.sortable-item.item-drop-target {
+  outline: 1.5px dashed var(--accent);
+  outline-offset: -1.5px;
+}
+
+/* ============================================================
+   Commodities & Watchlist (reuse the market-card/index-card
+   material, just one instrument per card instead of an exchange
+   with two indexes)
+   ============================================================ */
+
+.commodities-main,
+.watchlist-main {
+  padding: 6px 16px 14px;
+}
+
+.commodities-grid,
+.watchlist-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+  gap: 8px;
+  align-items: start;
+}
+
+.commodities-grid:empty::after,
+.watchlist-grid:empty::after {
+  content: "Nothing here yet";
+  color: var(--text-faint);
+  font-size: 12.5px;
+  grid-column: 1 / -1;
+}
+
+.instrument-card {
+  background: var(--surface-1);
+  backdrop-filter: var(--blur-lg);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-lg);
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+  box-shadow: 0 1px 1px rgba(0, 0, 0, 0.4), 0 12px 28px -14px rgba(0, 0, 0, 0.65);
+}
+
+.instrument-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  padding: 0 2px;
+  cursor: grab;
+}
+
+.instrument-head:active { cursor: grabbing; }
+
+.instrument-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text);
+  min-width: 0;
+}
+
+.instrument-title .flag { font-size: 15px; flex: none; }
+.instrument-title .name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.instrument-remove {
+  flex: none;
+  width: 18px;
+  height: 18px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: 1px solid var(--hairline);
+  border-radius: 50%;
+  color: var(--text-faint);
+  font-size: 11px;
+  line-height: 1;
+  cursor: pointer;
+  transition: color 150ms var(--ease-spring), border-color 150ms var(--ease-spring);
+}
+
+.instrument-remove:hover {
+  color: var(--red);
+  border-color: var(--red);
+}
+
+/* ---------- Watchlist search ---------- */
+
+.watchlist-search {
+  position: relative;
+  margin-bottom: 10px;
+  max-width: 420px;
+}
+
+.watchlist-input {
+  width: 100%;
+  background: var(--surface-2);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-md);
+  padding: 8px 12px;
+  color: var(--text);
+  font-size: 13px;
+  font-family: inherit;
+}
+
+.watchlist-input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.watchlist-input::placeholder { color: var(--text-faint); }
+
+.watchlist-results {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  right: 0;
+  z-index: 5;
+  background: rgba(20, 20, 22, 0.96);
+  backdrop-filter: var(--blur-lg);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-md);
+  box-shadow: 0 12px 28px -10px rgba(0, 0, 0, 0.75);
+  overflow: hidden;
+  display: none;
+}
+
+.watchlist-results.open { display: block; }
+
+.watchlist-result {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 8px 12px;
+  cursor: pointer;
+  border-bottom: 1px solid var(--hairline-soft);
+  font-size: 12.5px;
+}
+
+.watchlist-result:last-child { border-bottom: none; }
+.watchlist-result:hover { background: rgba(10, 132, 255, 0.12); }
+
+.watchlist-result .symbol {
+  font-family: var(--mono);
+  font-weight: 700;
+  color: var(--amber);
+  flex: none;
+}
+
+.watchlist-result .name {
+  color: var(--text-dim);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+}
+
+.watchlist-result .exchange {
+  color: var(--text-faint);
+  font-size: 10.5px;
+  flex: none;
+}
+
+.watchlist-result-empty {
+  padding: 10px 12px;
+  color: var(--text-faint);
+  font-size: 12px;
+}
+
+/* ============================================================
+   Detail modal (double-click any instrument tile)
+   ============================================================ */
+
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: rgba(0, 0, 0, 0.65);
+  backdrop-filter: blur(6px);
+}
+
+.modal-overlay.hidden { display: none; }
+
+.modal-box {
+  width: min(720px, 100%);
+  max-height: min(720px, 90vh);
+  overflow-y: auto;
+  background: var(--surface-1-alt);
+  backdrop-filter: var(--blur-lg);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-lg);
+  padding: 20px;
+  box-shadow: 0 30px 70px -20px rgba(0, 0, 0, 0.85);
+  animation: modal-in 220ms var(--ease-spring);
+}
+
+@keyframes modal-in {
+  from { opacity: 0; transform: translateY(12px) scale(0.98); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+.modal-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.modal-title {
+  font-size: 18px;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+}
+
+.modal-subtitle {
+  margin-top: 2px;
+  font-family: var(--mono);
+  font-size: 11.5px;
+  color: var(--text-dim);
+}
+
+.modal-close {
+  flex: none;
+  width: 30px;
+  height: 30px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--surface-2);
+  border: 1px solid var(--hairline);
+  border-radius: 50%;
+  color: var(--text-dim);
+  font-size: 13px;
+  cursor: pointer;
+  transition: color 150ms var(--ease-spring), border-color 150ms var(--ease-spring);
+}
+
+.modal-close:hover { color: var(--text); border-color: rgba(255, 255, 255, 0.22); }
+
+.modal-price-row {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  margin-top: 14px;
+}
+
+.modal-price {
+  font-size: 30px;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+  font-variant-numeric: tabular-nums;
+}
+
+.modal-change {
+  font-size: 15px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.modal-change.up { color: var(--green); }
+.modal-change.down { color: var(--red); }
+.modal-change.flat { color: var(--text-dim); }
+
+.modal-range-controls {
+  display: flex;
+  gap: 4px;
+  margin-top: 12px;
+}
+
+.modal-chart-wrap {
+  margin-top: 10px;
+  height: 300px;
+  border-radius: var(--radius-md);
+  overflow: hidden;
+}
+
+.modal-chart-canvas { width: 100%; height: 100%; }
+
+.modal-stats {
+  margin-top: 16px;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  gap: 10px;
+}
+
+.modal-stat {
+  background: var(--surface-2);
+  border: 1px solid var(--hairline-soft);
+  border-radius: var(--radius-md);
+  padding: 8px 10px;
+}
+
+.modal-stat-label {
+  font-size: 9.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-faint);
+}
+
+.modal-stat-value {
+  margin-top: 3px;
+  font-size: 13.5px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .modal-box { animation: none; }
 }
