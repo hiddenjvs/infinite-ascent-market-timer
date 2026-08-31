@@ -1,48 +1,105 @@
+/* ============================================================
+   Infinite Ascent — Market Timer
+   Redesign pass: Apple HIG-informed materials, type, and motion
+   (see skills/apple-design/SKILL.md — github.com/emilkowalski/skills)
+   ============================================================ */
+
 :root {
-  --bg: #0b0e14;
-  --panel: #131824;
-  --panel-alt: #171d2c;
-  --border: #232a3b;
-  --text: #e7ebf3;
-  --text-dim: #8a93a6;
-  --accent: #5fb3ff;
-  --green: #3ecf8e;
-  --red: #f0616d;
-  --amber: #f0b429;
+  /* System dark-mode palette (iOS/macOS semantic colors) */
+  --bg: #000000;
+  --text: #f5f5f7;
+  --text-dim: rgba(235, 235, 245, 0.6);
+  --text-faint: rgba(235, 235, 245, 0.38);
+
+  --accent: #0a84ff;
+  --green: #30d158;
+  --red: #ff453a;
+  --amber: #ff9f0a;
+
+  /* Material surfaces — structural (cards/panels) vs interactive (nested, lighter) */
+  --surface-1: rgba(28, 28, 30, 0.68);   /* structural: market cards, panels */
+  --surface-1-alt: rgba(20, 20, 22, 0.6);
+  --surface-2: rgba(255, 255, 255, 0.045); /* interactive: nested index tiles */
+  --hairline: rgba(255, 255, 255, 0.09);
+  --hairline-soft: rgba(255, 255, 255, 0.06);
+
+  --blur-lg: blur(24px) saturate(160%);
+  --blur-sm: blur(12px) saturate(140%);
+
+  --radius-lg: 20px;
+  --radius-md: 14px;
+  --radius-sm: 8px;
+
+  /* Approximates a critically-damped spring settle (damping 1.0, response ~0.32s) */
+  --ease-spring: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-press: cubic-bezier(0.4, 0, 1, 1);
+
+  --mono: "SF Mono", "Roboto Mono", "JetBrains Mono", Consolas, Menlo, monospace;
 }
 
 * { box-sizing: border-box; }
+
+html { color-scheme: dark; }
 
 body {
   margin: 0;
   background: var(--bg);
   color: var(--text);
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, Roboto, sans-serif;
+  font: 400 15px/1.47 -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display",
+    system-ui, "Segoe UI", Roboto, sans-serif;
+  font-optical-sizing: auto;
+  -webkit-font-smoothing: antialiased;
 }
+
+/* Reduced-motion: cross-fade instead of spring/slide, no hover lift, no pulsing */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+  .market-card:hover,
+  .range-btn:active,
+  .status-pill:hover { transform: none !important; }
+}
+
+/* Reduced-transparency: solid frosty surfaces, no blur */
+@media (prefers-reduced-transparency: reduce) {
+  .page-header,
+  .market-card,
+  .fx-table-wrap,
+  .chart-tooltip {
+    backdrop-filter: none !important;
+    background: #17171a !important;
+  }
+}
+
+/* ---------- Header ---------- */
 
 .page-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 20px 28px;
-  border-bottom: 1px solid var(--border);
+  padding: 18px 28px;
+  border-bottom: 1px solid var(--hairline-soft);
   position: sticky;
   top: 0;
-  background: rgba(11, 14, 20, 0.9);
-  backdrop-filter: blur(8px);
+  background: rgba(0, 0, 0, 0.55);
+  backdrop-filter: var(--blur-lg);
   z-index: 10;
 }
 
 .brand-mark {
-  font-weight: 700;
-  font-size: 18px;
-  letter-spacing: 0.02em;
+  font-weight: 650;
+  font-size: 17px;
+  letter-spacing: -0.01em;
 }
 
 .brand-sub {
   color: var(--text-dim);
   font-size: 13px;
   margin-left: 8px;
+  letter-spacing: 0;
 }
 
 .local-clock {
@@ -51,10 +108,10 @@ body {
 }
 
 #local-time {
-  font-size: 44px;
-  font-weight: 700;
-  line-height: 1.1;
-  letter-spacing: 0.01em;
+  font-size: clamp(2.1rem, 4.4vw, 2.75rem);
+  font-weight: 650;
+  line-height: 1.05;
+  letter-spacing: -0.02em;
 }
 
 .local-tz {
@@ -62,14 +119,297 @@ body {
   font-size: 12px;
   color: var(--text-dim);
   margin-top: 2px;
+  letter-spacing: 0;
 }
+
+/* ---------- Layout ---------- */
 
 .markets-main {
-  padding: 8px 24px 24px;
+  padding: 20px 24px 24px;
 }
 
+.market-section {
+  margin-top: 24px;
+}
+
+.section-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12.5px;
+  font-weight: 650;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-dim);
+  margin: 0 0 12px;
+}
+
+.section-title .dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+
+.section-title.open-title .dot { background: var(--green); box-shadow: 0 0 8px rgba(48, 209, 88, 0.55); }
+.section-title.closed-title .dot { background: var(--red); }
+
+.section-title .count {
+  color: var(--text);
+  font-weight: 700;
+}
+
+.markets-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(440px, 1fr));
+  gap: 16px;
+  align-items: start;
+}
+
+.markets-grid:empty::after {
+  content: "None right now";
+  color: var(--text-faint);
+  font-size: 12.5px;
+  grid-column: 1 / -1;
+}
+
+.loading {
+  color: var(--text-dim);
+  padding: 40px;
+}
+
+/* ---------- Market card (structural material — heavier blur) ---------- */
+
+.market-card {
+  background: var(--surface-1);
+  backdrop-filter: var(--blur-lg);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-lg);
+  padding: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-width: 0;
+  box-shadow: 0 1px 1px rgba(0, 0, 0, 0.4), 0 12px 28px -14px rgba(0, 0, 0, 0.65);
+  transition: transform 260ms var(--ease-spring), box-shadow 260ms var(--ease-spring),
+    border-color 260ms var(--ease-spring);
+}
+
+.market-card:hover {
+  transform: translateY(-2px);
+  border-color: rgba(255, 255, 255, 0.16);
+  box-shadow: 0 1px 1px rgba(0, 0, 0, 0.4), 0 20px 36px -16px rgba(0, 0, 0, 0.75);
+}
+
+.market-card-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.market-title {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.market-flag { font-size: 19px; }
+
+.market-name {
+  font-weight: 600;
+  font-size: 14.5px;
+  letter-spacing: -0.005em;
+}
+
+.market-meta {
+  color: var(--text-dim);
+  font-size: 12px;
+  margin-top: 2px;
+}
+
+.status-block {
+  text-align: right;
+}
+
+.status-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 10.5px;
+  font-weight: 650;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding: 3px 9px;
+  border-radius: 999px;
+  transition: background-color 200ms var(--ease-spring);
+}
+
+.status-pill.open {
+  background: rgba(48, 209, 88, 0.16);
+  color: var(--green);
+}
+
+.status-pill.closed {
+  background: rgba(255, 69, 58, 0.14);
+  color: var(--red);
+}
+
+.status-pill .dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.countdown {
+  margin-top: 6px;
+  font-variant-numeric: tabular-nums;
+  font-size: 18px;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+}
+
+.countdown-label {
+  font-size: 10.5px;
+  color: var(--text-dim);
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+/* ---------- Index tile (interactive material — lighter, no extra blur) ---------- */
+
+.indexes {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.index-card {
+  background: var(--surface-2);
+  border: 1px solid var(--hairline-soft);
+  border-radius: var(--radius-md);
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+  overflow: hidden;
+  transition: background-color 200ms var(--ease-spring);
+}
+
+.index-card:hover {
+  background: rgba(255, 255, 255, 0.065);
+}
+
+.index-head {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 6px 8px;
+  min-width: 0;
+}
+
+.index-name {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text);
+  letter-spacing: 0;
+}
+
+.index-price {
+  font-size: 14px;
+  font-variant-numeric: tabular-nums;
+  font-weight: 650;
+  letter-spacing: -0.005em;
+}
+
+.index-change {
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+
+.index-change.up { color: var(--green); }
+.index-change.down { color: var(--red); }
+.index-change.flat { color: var(--text-dim); }
+
+.range-controls {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 4px;
+}
+
+.range-btn {
+  background: transparent;
+  border: 1px solid var(--hairline);
+  color: var(--text-dim);
+  font-size: 10px;
+  font-weight: 600;
+  padding: 2px 6px;
+  border-radius: 999px;
+  cursor: pointer;
+  transition: transform 100ms var(--ease-press), background-color 150ms var(--ease-spring),
+    color 150ms var(--ease-spring), border-color 150ms var(--ease-spring);
+}
+
+.range-btn:hover {
+  border-color: rgba(255, 255, 255, 0.22);
+  color: var(--text);
+}
+
+/* Feedback on press, not just on release */
+.range-btn:active {
+  transform: scale(0.92);
+}
+
+.range-btn.active {
+  color: #ffffff;
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.chart-wrap {
+  position: relative;
+  height: 150px;
+  min-width: 0;
+  overflow: hidden;
+  border-radius: var(--radius-sm);
+}
+
+.chart-canvas {
+  min-width: 0;
+  overflow: hidden;
+}
+
+.chart-tooltip {
+  position: absolute;
+  top: 4px;
+  left: 6px;
+  z-index: 2;
+  font-size: 10.5px;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-dim);
+  pointer-events: none;
+  text-align: left;
+  background: rgba(10, 10, 12, 0.75);
+  backdrop-filter: var(--blur-sm);
+  padding: 2px 6px;
+  border-radius: var(--radius-sm);
+}
+
+.chart-tooltip .price {
+  color: var(--text);
+  font-weight: 700;
+  font-size: 12px;
+}
+
+/* ---------- FX cross-rate matrix ---------- */
+
 .fx-section {
-  padding: 10px 24px 32px;
+  padding: 12px 24px 32px;
   max-width: 900px;
 }
 
@@ -81,10 +421,9 @@ body {
 }
 
 .fx-heading {
-  font-family: "SF Mono", "Roboto Mono", "JetBrains Mono", Consolas, Menlo, monospace;
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.1em;
+  font-size: 12.5px;
+  font-weight: 650;
+  letter-spacing: 0.04em;
   text-transform: uppercase;
   color: var(--text-dim);
   margin: 0;
@@ -92,15 +431,15 @@ body {
 
 .fx-subtext {
   font-size: 10.5px;
-  color: var(--text-dim);
-  margin: 2px 0 8px;
+  color: var(--text-faint);
+  margin: 2px 0 10px;
 }
 
 .fx-live {
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  font-family: "SF Mono", "Roboto Mono", "JetBrains Mono", Consolas, Menlo, monospace;
+  font-family: var(--mono);
   font-size: 9.5px;
   font-weight: 700;
   letter-spacing: 0.08em;
@@ -122,41 +461,43 @@ body {
 
 .fx-table-wrap {
   overflow-x: auto;
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  background: #05070c;
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-md);
+  background: var(--surface-1-alt);
+  backdrop-filter: var(--blur-lg);
+  box-shadow: 0 1px 1px rgba(0, 0, 0, 0.4), 0 12px 28px -14px rgba(0, 0, 0, 0.65);
 }
 
 .fx-matrix {
   border-collapse: collapse;
-  font-family: "SF Mono", "Roboto Mono", "JetBrains Mono", Consolas, Menlo, monospace;
+  font-family: var(--mono);
   font-size: 10.5px;
 }
 
 .fx-matrix th,
 .fx-matrix td {
-  padding: 3px 7px;
+  padding: 4px 8px;
   text-align: right;
   white-space: nowrap;
-  border-bottom: 1px solid rgba(35, 42, 59, 0.5);
-  border-left: 1px solid rgba(35, 42, 59, 0.5);
+  border-bottom: 1px solid var(--hairline-soft);
+  border-left: 1px solid var(--hairline-soft);
 }
 
 .fx-matrix thead th {
   position: sticky;
   top: 0;
-  background: #05070c;
+  background: rgba(20, 20, 22, 0.92);
   color: var(--text-dim);
   font-weight: 700;
   letter-spacing: 0.02em;
-  border-bottom: 1px solid var(--border);
+  border-bottom: 1px solid var(--hairline);
 }
 
 .fx-matrix .fx-corner {
   position: sticky;
   left: 0;
   z-index: 2;
-  background: #05070c;
+  background: rgba(20, 20, 22, 0.92);
   border-left: none;
 }
 
@@ -164,15 +505,15 @@ body {
   position: sticky;
   left: 0;
   z-index: 1;
-  background: #05070c;
+  background: rgba(20, 20, 22, 0.92);
   text-align: left;
   font-weight: 700;
   color: var(--amber);
   border-left: none;
 }
 
-.fx-matrix tbody tr:nth-child(odd) td:not(.fx-row-head) { background: rgba(255, 255, 255, 0.015); }
-.fx-matrix tbody tr:nth-child(odd) .fx-row-head { background: #070a11; }
+.fx-matrix tbody tr:nth-child(odd) td:not(.fx-row-head) { background: rgba(255, 255, 255, 0.02); }
+.fx-matrix tbody tr:nth-child(odd) .fx-row-head { background: rgba(24, 24, 26, 0.92); }
 
 .fx-matrix td.fx-cell {
   color: var(--text);
@@ -189,264 +530,19 @@ body {
 }
 
 .fx-matrix td.fx-diagonal {
-  color: var(--text-dim);
+  color: var(--text-faint);
   background: rgba(255, 255, 255, 0.03) !important;
 }
 
-.fx-matrix td.fx-cell.flash-up { background-color: rgba(62, 207, 142, 0.35) !important; }
-.fx-matrix td.fx-cell.flash-down { background-color: rgba(240, 97, 109, 0.35) !important; }
+.fx-matrix td.fx-cell.flash-up { background-color: rgba(48, 209, 88, 0.32) !important; }
+.fx-matrix td.fx-cell.flash-down { background-color: rgba(255, 69, 58, 0.32) !important; }
 
-.fx-matrix tbody tr:hover td:not(.fx-row-head) { background: rgba(95, 179, 255, 0.08); }
-.fx-matrix tbody tr:hover .fx-row-head { background: rgba(95, 179, 255, 0.12); }
-
-.market-section {
-  margin-top: 20px;
-}
-
-.section-title {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 13px;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  color: var(--text-dim);
-  margin: 0 0 12px;
-}
-
-.section-title .dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-}
-
-.section-title.open-title .dot { background: var(--green); }
-.section-title.closed-title .dot { background: var(--red); }
-
-.section-title .count {
-  color: var(--text);
-  font-weight: 700;
-}
-
-.markets-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(440px, 1fr));
-  gap: 18px;
-  align-items: start;
-}
-
-.markets-grid:empty::after {
-  content: "None right now";
-  color: var(--text-dim);
-  font-size: 12.5px;
-  grid-column: 1 / -1;
-}
-
-.loading {
-  color: var(--text-dim);
-  padding: 40px;
-}
-
-.market-card {
-  background: var(--panel);
-  border: 1px solid var(--border);
-  border-radius: 14px;
-  padding: 18px;
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-  min-width: 0;
-}
-
-.market-card-head {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 10px;
-}
-
-.market-title {
-  display: flex;
-  align-items: baseline;
-  gap: 8px;
-}
-
-.market-flag { font-size: 20px; }
-
-.market-name {
-  font-weight: 600;
-  font-size: 15px;
-}
-
-.market-meta {
-  color: var(--text-dim);
-  font-size: 12px;
-  margin-top: 2px;
-}
-
-.status-block {
-  text-align: right;
-}
-
-.status-pill {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 11px;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  padding: 3px 9px;
-  border-radius: 999px;
-}
-
-.status-pill.open {
-  background: rgba(62, 207, 142, 0.15);
-  color: var(--green);
-}
-
-.status-pill.closed {
-  background: rgba(240, 97, 109, 0.12);
-  color: var(--red);
-}
-
-.status-pill .dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: currentColor;
-}
-
-.countdown {
-  margin-top: 6px;
-  font-variant-numeric: tabular-nums;
-  font-size: 18px;
-  font-weight: 700;
-}
-
-.countdown-label {
-  font-size: 11px;
-  color: var(--text-dim);
-  font-weight: 400;
-  text-transform: uppercase;
-  letter-spacing: 0.03em;
-}
-
-.indexes {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 12px;
-}
-
-.index-card {
-  background: var(--panel-alt);
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  padding: 12px;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  min-width: 0;
-  overflow: hidden;
-}
-
-.index-head {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: space-between;
-  align-items: baseline;
-  gap: 6px 8px;
-  min-width: 0;
-}
-
-.index-name {
-  font-size: 12.5px;
-  font-weight: 600;
-  color: var(--text);
-}
-
-.index-price {
-  font-size: 14px;
-  font-variant-numeric: tabular-nums;
-  font-weight: 700;
-}
-
-.index-change {
-  font-size: 11.5px;
-  font-variant-numeric: tabular-nums;
-  font-weight: 600;
-}
-
-.index-change.up { color: var(--green); }
-.index-change.down { color: var(--red); }
-.index-change.flat { color: var(--text-dim); }
-
-.range-controls {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: flex-end;
-  gap: 4px;
-}
-
-.range-btn {
-  background: transparent;
-  border: 1px solid var(--border);
-  color: var(--text-dim);
-  font-size: 10.5px;
-  padding: 2px 6px;
-  border-radius: 6px;
-  cursor: pointer;
-}
-
-.range-btn.active {
-  color: var(--bg);
-  background: var(--accent);
-  border-color: var(--accent);
-}
-
-.chart-wrap {
-  position: relative;
-  height: 150px;
-  min-width: 0;
-  overflow: hidden;
-  border-radius: 6px;
-}
-
-.chart-canvas {
-  min-width: 0;
-  overflow: hidden;
-}
-
-.chart-tooltip {
-  position: absolute;
-  top: 4px;
-  left: 6px;
-  z-index: 2;
-  font-size: 10.5px;
-  font-variant-numeric: tabular-nums;
-  color: var(--text-dim);
-  pointer-events: none;
-  text-align: left;
-  background: rgba(19, 24, 36, 0.72);
-  padding: 2px 6px;
-  border-radius: 5px;
-}
-
-.chart-tooltip .price {
-  color: var(--text);
-  font-weight: 700;
-  font-size: 12px;
-}
-
-.chart-error {
-  color: var(--text-dim);
-  font-size: 11px;
-  padding: 8px 0;
-}
+.fx-matrix tbody tr:hover td:not(.fx-row-head) { background: rgba(10, 132, 255, 0.1); }
+.fx-matrix tbody tr:hover .fx-row-head { background: rgba(10, 132, 255, 0.16); }
 
 .page-footer {
   padding: 18px 28px 40px;
-  color: var(--text-dim);
+  color: var(--text-faint);
   font-size: 11.5px;
+  max-width: 900px;
 }
