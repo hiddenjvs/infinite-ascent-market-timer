@@ -10,8 +10,20 @@
 <body>
   <header class="page-header">
     <div class="brand">
-      <img class="brand-logo" src="assets/logo.png" alt="Infinite Ascent" />
-      <span class="brand-sub">Market Timer</span>
+      <div class="brand-top">
+        <img class="brand-logo" src="assets/logo.png" alt="Infinite Ascent" />
+        <span class="brand-sub">Market Timer</span>
+      </div>
+      <div class="api-status">
+        <span class="api-chip">
+          <span class="api-dot" data-role="markets-dot"></span>MARKETS API
+          <span class="api-state" data-role="markets-state">connecting…</span>
+        </span>
+        <span class="api-chip">
+          <span class="api-dot" data-role="fx-dot"></span>FX API
+          <span class="api-state" data-role="fx-state">connecting…</span>
+        </span>
+      </div>
     </div>
     <div class="local-clock">
       <span id="local-time">--:--:--</span>

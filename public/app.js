@@ -128,6 +128,41 @@ function tickLocalClock() {
 setInterval(tickLocalClock, 1000);
 tickLocalClock();
 
+// ---------- Logo pulse + API health (driven by the actual refresh cycle) ----------
+
+function pulseLogo() {
+  const el = document.querySelector('.brand-logo');
+  if (!el) return;
+  el.classList.remove('flicker');
+  void el.offsetWidth; // force reflow so the animation restarts even if still mid-flicker
+  el.classList.add('flicker');
+}
+
+function updateApiStatus(key, succeeded, total) {
+  const dot = document.querySelector(`[data-role="${key}-dot"]`);
+  const state = document.querySelector(`[data-role="${key}-state"]`);
+  if (!dot || !state) return;
+
+  let cls, label;
+  if (total === 0) {
+    cls = 'down';
+    label = 'NO DATA';
+  } else if (succeeded === total) {
+    cls = 'ok';
+    label = 'CONNECTED';
+  } else if (succeeded > 0) {
+    cls = 'degraded';
+    label = `PARTIAL ${succeeded}/${total}`;
+  } else {
+    cls = 'down';
+    label = 'UNREACHABLE';
+  }
+
+  dot.className = `api-dot ${cls}`;
+  const time = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+  state.textContent = `${label} · ${time}`;
+}
+
 // ---------- Chart ranges ----------
 
 const RANGES = [
@@ -307,11 +342,13 @@ class IndexPanel {
           { time: last.time, position: 'inBar', color: trendColor, shape: 'circle', size: 1.4 }
         ]);
       }
+      return true;
     } catch (err) {
       this.tooltipEl.textContent = '';
       this.priceEl.textContent = 'N/A';
       this.changeEl.textContent = 'data unavailable';
       this.changeEl.className = 'index-change flat';
+      return false;
     }
   }
 }
@@ -350,7 +387,6 @@ function buildMarketCard(market) {
     indexesEl.appendChild(panelEl);
     const panel = new IndexPanel(panelEl, idx.symbol, idx.name);
     panels.push(panel);
-    panel.load();
   });
 
   const entry = {
@@ -462,23 +498,24 @@ function buildFxMatrix(currencies) {
 async function loadFxRates() {
   const usdPerX = { USD: 1 };
   const prevUsdPerX = { USD: 1 }; // triangulated from each leg's previous close, for day-direction trend
+  const legs = fxCurrencies.filter((c) => c.symbol);
+  let succeeded = 0;
 
   await Promise.all(
-    fxCurrencies
-      .filter((c) => c.symbol)
-      .map(async (c) => {
-        try {
-          const res = await fetch(`/api/chart/${encodeURIComponent(c.symbol)}?range=1d&interval=15m`);
-          const data = await res.json();
-          if (data.error || data.price == null) throw new Error(data.error || 'no price');
-          usdPerX[c.code] = c.invert ? 1 / data.price : data.price;
-          prevUsdPerX[c.code] =
-            data.previousClose != null ? (c.invert ? 1 / data.previousClose : data.previousClose) : null;
-        } catch (err) {
-          usdPerX[c.code] = null;
-          prevUsdPerX[c.code] = null;
-        }
-      })
+    legs.map(async (c) => {
+      try {
+        const res = await fetch(`/api/chart/${encodeURIComponent(c.symbol)}?range=1d&interval=15m`);
+        const data = await res.json();
+        if (data.error || data.price == null) throw new Error(data.error || 'no price');
+        usdPerX[c.code] = c.invert ? 1 / data.price : data.price;
+        prevUsdPerX[c.code] =
+          data.previousClose != null ? (c.invert ? 1 / data.previousClose : data.previousClose) : null;
+        succeeded++;
+      } catch (err) {
+        usdPerX[c.code] = null;
+        prevUsdPerX[c.code] = null;
+      }
+    })
   );
 
   fxCurrencies.forEach((rowCcy) => {
@@ -514,6 +551,8 @@ async function loadFxRates() {
       if (value != null) fxLastValues.set(key, value);
     });
   });
+
+  return { succeeded, total: legs.length };
 }
 
 async function initFx() {
@@ -522,14 +561,24 @@ async function initFx() {
     const res = await fetch('/api/fx');
     fxCurrencies = await res.json();
     buildFxMatrix(fxCurrencies);
-    await loadFxRates();
   } catch (err) {
     wrap.innerHTML = `<p class="loading">Failed to load FX rates: ${err.message}</p>`;
   }
 }
 
+async function refreshAll() {
+  const [panelResults, fxResult] = await Promise.all([
+    Promise.all(panels.map((p) => p.load())),
+    loadFxRates()
+  ]);
+  const marketsSucceeded = panelResults.filter(Boolean).length;
+  updateApiStatus('markets', marketsSucceeded, panels.length);
+  updateApiStatus('fx', fxResult.succeeded, fxResult.total);
+  pulseLogo();
+}
+
 async function init() {
-  initFx();
+  await initFx();
   const main = document.getElementById('markets-main');
   try {
     const res = await fetch('/api/markets');
@@ -565,10 +614,9 @@ async function init() {
 
     // Refresh live prices/charts/FX as often as the free API comfortably allows
     // (backend caches responses for ~20s, so this stays close to real-time).
-    setInterval(() => {
-      panels.forEach((p) => p.load());
-      loadFxRates();
-    }, 20000);
+    // The logo flicker and API health log below it are driven by this same cycle.
+    await refreshAll();
+    setInterval(refreshAll, 20000);
   } catch (err) {
     main.innerHTML = `<p class="loading">Failed to load market data: ${err.message}</p>`;
   }

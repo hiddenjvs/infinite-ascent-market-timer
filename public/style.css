@@ -91,6 +91,12 @@ body {
 
 .brand {
   display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.brand-top {
+  display: flex;
   align-items: center;
   gap: 10px;
 }
@@ -100,24 +106,75 @@ body {
   position: relative;
   height: 72px;
   width: auto;
-  animation: flicker-loop 5s steps(1, end) infinite;
+  opacity: 1;
   will-change: transform, opacity;
 }
 
-/* Boot-up flicker, lifted from infiniteascent.com's own hero animation —
-   same flicker curve, rescaled into the first ~22% of a 5s cycle and held
-   at full opacity until it cuts back to black and replays. */
-@keyframes flicker-loop {
+/* Fired by JS (pulseLogo()) every time refreshAll() completes a live data pull —
+   the logo flicker doubles as a "the API just synced" heartbeat, not a timer. */
+.brand-logo.flicker {
+  animation: flicker-pulse 1.5s steps(1, end);
+}
+
+/* Boot-up flicker curve, lifted from infiniteascent.com's own hero animation */
+@keyframes flicker-pulse {
   0% { opacity: 0; }
-  2.3% { opacity: 0.85; }
-  3.4% { opacity: 0.08; }
-  5.3% { opacity: 0.6; }
-  6.5% { opacity: 0.15; }
-  9.9% { opacity: 0.95; }
-  11.8% { opacity: 0.3; }
-  16% { opacity: 1; }
-  17.9% { opacity: 0.55; }
-  22%, 100% { opacity: 1; }
+  6% { opacity: 0.85; }
+  9% { opacity: 0.08; }
+  14% { opacity: 0.6; }
+  17% { opacity: 0.15; }
+  26% { opacity: 0.95; }
+  31% { opacity: 0.3; }
+  42% { opacity: 1; }
+  47% { opacity: 0.55; }
+  58%, 100% { opacity: 1; }
+}
+
+.api-status {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+}
+
+.api-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--mono);
+  font-size: 9.5px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+}
+
+.api-state {
+  color: var(--text-faint);
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+.api-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--text-faint);
+  transition: background-color 200ms var(--ease-spring), box-shadow 200ms var(--ease-spring);
+}
+
+.api-dot.ok {
+  background: var(--green);
+  box-shadow: 0 0 6px rgba(48, 209, 88, 0.6);
+}
+
+.api-dot.degraded {
+  background: var(--amber);
+  box-shadow: 0 0 6px rgba(255, 159, 10, 0.55);
+}
+
+.api-dot.down {
+  background: var(--red);
+  box-shadow: 0 0 6px rgba(255, 69, 58, 0.55);
 }
 
 .brand-sub {
