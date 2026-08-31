@@ -27,9 +27,9 @@
   --blur-lg: blur(24px) saturate(160%);
   --blur-sm: blur(12px) saturate(140%);
 
-  --radius-lg: 20px;
-  --radius-md: 14px;
-  --radius-sm: 8px;
+  --radius-lg: 10px;
+  --radius-md: 7px;
+  --radius-sm: 5px;
 
   /* Approximates a critically-damped spring settle (damping 1.0, response ~0.32s) */
   --ease-spring: cubic-bezier(0.22, 1, 0.36, 1);
@@ -89,8 +89,8 @@ body {
 .header-top {
   display: flex;
   align-items: center;
-  gap: 22px;
-  padding: 18px 28px;
+  gap: 14px;
+  padding: 10px 18px;
 }
 
 .header-top .brand,
@@ -105,7 +105,7 @@ body {
   min-width: 0;
   display: flex;
   align-items: stretch;
-  height: 46px;
+  height: 40px;
   background: var(--surface-2);
   border: 1px solid var(--hairline-soft);
   border-radius: var(--radius-md);
@@ -116,8 +116,8 @@ body {
   flex: none;
   display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 0 16px;
+  gap: 5px;
+  padding: 0 12px;
   background: rgba(255, 159, 10, 0.1);
   border-right: 1px solid var(--hairline-soft);
   font-family: var(--mono);
@@ -160,7 +160,7 @@ body {
 .news-ticker-item {
   display: inline-flex;
   align-items: center;
-  padding: 0 24px;
+  padding: 0 14px;
   font-family: var(--mono);
   font-size: 13px;
   font-weight: 500;
@@ -174,13 +174,13 @@ a.news-ticker-item:hover {
 
 .news-ticker-item .source {
   color: var(--text-dim);
-  margin-right: 9px;
+  margin-right: 8px;
   font-weight: 700;
 }
 
 .news-ticker-item .sep {
   color: var(--hairline);
-  margin-left: 24px;
+  margin-left: 14px;
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -196,13 +196,13 @@ a.news-ticker-item:hover {
 .brand {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 5px;
 }
 
 .brand-top {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
 }
 
 .brand-logo {
@@ -238,11 +238,11 @@ a.news-ticker-item:hover {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 14px;
+  gap: 10px;
   background: var(--surface-2);
   border: 1px solid var(--hairline-soft);
   border-radius: var(--radius-md);
-  padding: 8px 14px;
+  padding: 4px 10px;
   width: fit-content;
 }
 
@@ -316,11 +316,11 @@ a.news-ticker-item:hover {
 /* ---------- Layout ---------- */
 
 .markets-main {
-  padding: 20px 24px 24px;
+  padding: 12px 16px 14px;
 }
 
 .market-section {
-  margin-top: 24px;
+  margin-top: 12px;
 }
 
 .section-title {
@@ -332,7 +332,7 @@ a.news-ticker-item:hover {
   text-transform: uppercase;
   letter-spacing: 0.06em;
   color: var(--text-dim);
-  margin: 0 0 12px;
+  margin: 0 0 6px;
 }
 
 .section-title .dot {
@@ -351,8 +351,8 @@ a.news-ticker-item:hover {
 
 .markets-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(440px, 1fr));
-  gap: 16px;
+  grid-template-columns: repeat(auto-fill, minmax(390px, 1fr));
+  gap: 8px;
   align-items: start;
 }
 
@@ -375,10 +375,10 @@ a.news-ticker-item:hover {
   backdrop-filter: var(--blur-lg);
   border: 1px solid var(--hairline);
   border-radius: var(--radius-lg);
-  padding: 18px;
+  padding: 10px;
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: 8px;
   min-width: 0;
   box-shadow: 0 1px 1px rgba(0, 0, 0, 0.4), 0 12px 28px -14px rgba(0, 0, 0, 0.65);
   transition: transform 260ms var(--ease-spring), box-shadow 260ms var(--ease-spring),
@@ -395,27 +395,27 @@ a.news-ticker-item:hover {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  gap: 10px;
+  gap: 8px;
 }
 
 .market-title {
   display: flex;
   align-items: baseline;
-  gap: 8px;
+  gap: 6px;
 }
 
-.market-flag { font-size: 19px; }
+.market-flag { font-size: 17px; }
 
 .market-name {
   font-weight: 600;
-  font-size: 14.5px;
+  font-size: 13.5px;
   letter-spacing: -0.005em;
 }
 
 .market-meta {
   color: var(--text-dim);
-  font-size: 12px;
-  margin-top: 2px;
+  font-size: 11px;
+  margin-top: 0;
 }
 
 .status-block {
@@ -453,9 +453,9 @@ a.news-ticker-item:hover {
 }
 
 .countdown {
-  margin-top: 6px;
+  margin-top: 2px;
   font-variant-numeric: tabular-nums;
-  font-size: 18px;
+  font-size: 17px;
   font-weight: 650;
   letter-spacing: -0.01em;
 }
@@ -473,17 +473,17 @@ a.news-ticker-item:hover {
 .indexes {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 10px;
+  gap: 6px;
 }
 
 .index-card {
   background: var(--surface-2);
   border: 1px solid var(--hairline-soft);
   border-radius: var(--radius-md);
-  padding: 12px;
+  padding: 7px;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 4px;
   min-width: 0;
   overflow: hidden;
   transition: background-color 200ms var(--ease-spring);
@@ -530,7 +530,7 @@ a.news-ticker-item:hover {
   display: flex;
   flex-wrap: wrap;
   justify-content: flex-end;
-  gap: 4px;
+  gap: 3px;
 }
 
 .range-btn {
@@ -539,7 +539,7 @@ a.news-ticker-item:hover {
   color: var(--text-dim);
   font-size: 10px;
   font-weight: 600;
-  padding: 2px 6px;
+  padding: 1px 5px;
   border-radius: 999px;
   cursor: pointer;
   transition: transform 100ms var(--ease-press), background-color 150ms var(--ease-spring),
@@ -564,7 +564,7 @@ a.news-ticker-item:hover {
 
 .chart-wrap {
   position: relative;
-  height: 150px;
+  height: 128px;
   min-width: 0;
   overflow: hidden;
   border-radius: var(--radius-sm);
@@ -600,7 +600,7 @@ a.news-ticker-item:hover {
 /* ---------- FX cross-rate matrix ---------- */
 
 .fx-section {
-  padding: 12px 24px 32px;
+  padding: 8px 16px 16px;
 }
 
 .fx-bar {
@@ -608,7 +608,7 @@ a.news-ticker-item:hover {
   align-items: center;
   justify-content: flex-start;
   gap: 10px;
-  margin-bottom: 2px;
+  margin-bottom: 0;
 }
 
 .fx-heading {
@@ -623,7 +623,7 @@ a.news-ticker-item:hover {
 .fx-subtext {
   font-size: 10.5px;
   color: var(--text-faint);
-  margin: 2px 0 10px;
+  margin: 2px 0 6px;
 }
 
 /* Reusable live/health badge — reflects the actual API status computed in
@@ -691,7 +691,7 @@ a.news-ticker-item:hover {
 
 .fx-matrix th,
 .fx-matrix td {
-  padding: 3px 8px;
+  padding: 2px 6px;
   text-align: right;
   white-space: nowrap;
   border-bottom: 1px solid var(--hairline-soft);
@@ -756,7 +756,7 @@ a.news-ticker-item:hover {
 .fx-matrix tbody tr:hover .fx-row-head { background: rgba(10, 132, 255, 0.16); }
 
 .page-footer {
-  padding: 18px 28px 40px;
+  padding: 10px 18px 20px;
   color: var(--text-faint);
-  font-size: 11.5px;
+  font-size: 11px;
 }
