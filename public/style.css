@@ -97,8 +97,25 @@ body {
 
 .brand-logo {
   display: block;
+  position: relative;
   height: 48px;
   width: auto;
+  animation: flicker-in 1.9s steps(1, end) both;
+  will-change: transform, opacity;
+}
+
+/* Boot-up flicker, lifted from infiniteascent.com's own hero animation */
+@keyframes flicker-in {
+  0% { opacity: 0; }
+  6% { opacity: 0.85; }
+  9% { opacity: 0.08; }
+  14% { opacity: 0.6; }
+  17% { opacity: 0.15; }
+  26% { opacity: 0.95; }
+  31% { opacity: 0.3; }
+  42% { opacity: 1; }
+  47% { opacity: 0.55; }
+  58%, 100% { opacity: 1; }
 }
 
 .brand-sub {
