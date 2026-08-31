@@ -65,17 +65,26 @@ app.get('/api/bonds', (req, res) => {
 // Ticker search for the "add a stock" watchlist feature — proxies Yahoo
 // Finance's unofficial search endpoint (same free, no-key deal as everything
 // else) so the browser doesn't hit CORS.
+// Bond/yield instruments have no dedicated Yahoo quoteType (futures, ETFs,
+// and yield indices all mix in under Futures/ETF/Index), so "is this a bond"
+// is a name-keyword check rather than a type check.
+const BOND_RELEVANCE_RE = /\b(treasury|bond|yield|note|bund|gilt|jgb|t-bill|interest rate)\b/i;
+
 app.get('/api/search', async (req, res) => {
   const q = (req.query.q || '').trim();
+  const kind = (req.query.kind || '').trim().toLowerCase();
   if (!q) return res.json([]);
 
   try {
-    const url = `https://query1.finance.yahoo.com/v1/finance/search?q=${encodeURIComponent(q)}&quotesCount=8&newsCount=0`;
+    // Ask Yahoo for more candidates when we're about to filter most of them
+    // out, so a scoped search still has enough left to actually show.
+    const quotesCount = kind ? 20 : 8;
+    const url = `https://query1.finance.yahoo.com/v1/finance/search?q=${encodeURIComponent(q)}&quotesCount=${quotesCount}&newsCount=0`;
     const r = await fetch(url, { headers: YF_HEADERS });
     if (!r.ok) throw new Error(`Yahoo Finance responded ${r.status}`);
     const json = await r.json();
     const quotes = Array.isArray(json?.quotes) ? json.quotes : [];
-    const results = quotes
+    let results = quotes
       .filter((q) => q.symbol && (q.shortname || q.longname))
       .map((q) => ({
         symbol: q.symbol,
@@ -83,7 +92,17 @@ app.get('/api/search', async (req, res) => {
         exchange: q.exchDisp || q.exchange || null,
         type: q.typeDisp || q.quoteType || null
       }));
-    res.json(results);
+
+    if (kind === 'commodity') {
+      // Every commodity in this app (and on Yahoo generally) is a futures
+      // contract — ETFs/equities that merely track a commodity (GLD, GDX)
+      // are excluded on purpose, same convention as data/commodities.json.
+      results = results.filter((r) => (r.type || '').toLowerCase() === 'futures');
+    } else if (kind === 'bond') {
+      results = results.filter((r) => BOND_RELEVANCE_RE.test(r.name) || BOND_RELEVANCE_RE.test(r.symbol));
+    }
+
+    res.json(results.slice(0, 8));
   } catch (err) {
     res.status(502).json({ error: err.message });
   }

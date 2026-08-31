@@ -1205,8 +1205,9 @@ function initSearchAdd(inputId, resultsId, { search, onSelect, emptyText = 'No m
   });
 }
 
-async function tickerSearch(q) {
-  const res = await fetch(`/api/search?q=${encodeURIComponent(q)}`);
+async function tickerSearch(q, kind) {
+  const url = kind ? `/api/search?q=${encodeURIComponent(q)}&kind=${kind}` : `/api/search?q=${encodeURIComponent(q)}`;
+  const res = await fetch(url);
   const items = await res.json();
   return Array.isArray(items) ? items : [];
 }
@@ -1692,7 +1693,7 @@ function initAddWindowMenu() {
 
       openInlineSearchPopover(tile, {
         placeholder: `Search ${searchLabels[type]}`,
-        search: tickerSearch,
+        search: (q) => tickerSearch(q, type === 'ticker' ? undefined : type),
         onSelect: (item) => createStandaloneInstrumentTile(item, dashboardPanels, tile)
       });
     });
@@ -2114,14 +2115,16 @@ async function init() {
     if (!closedIds.has('commodities')) {
       initCuratedBucket('commodities-grid', 'commodities', commoditiesAddedBucket);
       initSearchAdd('commodities-input', 'commodities-results', {
-        search: tickerSearch,
+        search: (q) => tickerSearch(q, 'commodity'),
+        emptyText: 'No matching commodity/future',
         onSelect: (item) => commoditiesAddedBucket.addItem({ symbol: item.symbol, name: item.name })
       });
     }
     if (!closedIds.has('bonds')) {
       initCuratedBucket('bonds-grid', 'bonds', bondsAddedBucket);
       initSearchAdd('bonds-input', 'bonds-results', {
-        search: tickerSearch,
+        search: (q) => tickerSearch(q, 'bond'),
+        emptyText: 'No matching bond/yield',
         onSelect: (item) => bondsAddedBucket.addItem({ symbol: item.symbol, name: item.name })
       });
     }

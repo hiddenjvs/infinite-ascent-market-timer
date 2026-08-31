@@ -299,6 +299,37 @@ a.headline-text:hover {
   letter-spacing: -0.02em;
 }
 
+/* Below this, brand + news ticker + clock no longer all fit on one row at
+   their natural widths (clock and brand are deliberately `flex: none` so
+   neither one silently shrinks its text) — wrap instead of letting the
+   clock run off the right edge. */
+@media (max-width: 900px) {
+  .header-top {
+    flex-wrap: wrap;
+    row-gap: 10px;
+  }
+
+  .header-top .news-ticker {
+    order: 3;
+    flex-basis: 100%;
+  }
+
+  .header-top .local-clock {
+    text-align: left;
+  }
+}
+
+@media (max-width: 480px) {
+  .header-top .brand,
+  .header-top .local-clock {
+    flex-basis: 100%;
+  }
+
+  #local-time {
+    font-size: clamp(1.7rem, 9vw, 2.1rem);
+  }
+}
+
 .local-tz {
   display: block;
   font-size: 12px;
@@ -345,7 +376,10 @@ a.headline-text:hover {
 
 .markets-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(390px, 1fr));
+  /* min(390px, 100%) instead of a bare 390px — a plain minmax() floor forces
+     that width even in a container narrower than it, which is what pushed
+     the whole page into horizontal overflow on smaller windows. */
+  grid-template-columns: repeat(auto-fill, minmax(min(390px, 100%), 1fr));
   gap: 8px;
   align-items: start;
 }
@@ -1119,7 +1153,7 @@ a.headline-text:hover {
 .commodities-grid,
 .watchlist-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(min(230px, 100%), 1fr));
   gap: 8px;
   align-items: start;
 }
@@ -1391,7 +1425,7 @@ a.headline-text:hover {
 .modal-stats {
   margin-top: 16px;
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(130px, 100%), 1fr));
   gap: 10px;
 }
 
