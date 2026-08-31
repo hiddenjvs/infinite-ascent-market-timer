@@ -145,40 +145,19 @@ app.get('/api/livetv/:channel', async (req, res) => {
     const r = await fetch(url, { headers: YOUTUBE_HEADERS });
     if (!r.ok) throw new Error(`YouTube responded ${r.status}`);
     const html = await r.text();
-    // videoDetails is present on the actual watch page; the canonical link
-    // tag is a fallback that's survived past YouTube markup changes better.
+    // Render (and apparently only Render — not tested elsewhere, but the
+    // exact same code scrapes fine from a residential IP) gets served a
+    // newer WIZ-framework YouTube template where `videoDetails` is a
+    // different nested object (playerOverlayVideoDetailsRenderer) that
+    // doesn't lead with videoId, so anchoring to "videoDetails":{"videoId"
+    // never matches there even though the page is genuine and has the
+    // video. A bare "videoId" field lookup works across both templates —
+    // it's the first one in the page on both — with the canonical link
+    // tag kept as a fallback for whatever template comes next.
     const match =
-      html.match(/"videoDetails":\{"videoId":"([A-Za-z0-9_-]{11})"/) ||
+      html.match(/"videoId":"([A-Za-z0-9_-]{11})"/) ||
       html.match(/<link rel="canonical" href="https:\/\/www\.youtube\.com\/watch\?v=([A-Za-z0-9_-]{11})"/);
-    if (!match) {
-      // Temporary diagnostic: the first debug pass showed the deployed
-      // instance is getting served a completely different (WIZ-framework)
-      // YouTube page template than the classic one this scrapes locally —
-      // 1.3MB of real page, not a consent/bot-block wall — so it has none of
-      // the markers this looked for. Report which known markers are/aren't
-      // present so the right one to key off can be picked without more
-      // round trips.
-      const markers = [
-        'videoDetails',
-        'ytInitialPlayerResponse',
-        'ytInitialData',
-        '"videoId":"',
-        'canonical',
-        'isLiveContent',
-        'og:video',
-        'watch?v='
-      ];
-      const found = {};
-      markers.forEach((m) => {
-        const idx = html.indexOf(m);
-        found[m] = idx === -1 ? null : html.slice(idx, idx + 150).replace(/\s+/g, ' ');
-      });
-      console.error(`livetv/${channel}: no match. length=${html.length} markers=${JSON.stringify(found)}`);
-      const err = new Error('No live video found for this channel');
-      err.debugMarkers = found;
-      err.debugLength = html.length;
-      throw err;
-    }
+    if (!match) throw new Error('No live video found for this channel');
 
     const data = { videoId: match[1] };
     livetvCache.set(channel, { at: Date.now(), data });
@@ -186,7 +165,7 @@ app.get('/api/livetv/:channel', async (req, res) => {
   } catch (err) {
     console.error(`livetv/${channel} failed:`, err.message);
     if (cached) return res.json(cached.data);
-    res.status(502).json({ error: err.message, debugMarkers: err.debugMarkers, debugLength: err.debugLength });
+    res.status(502).json({ error: err.message });
   }
 });
 
