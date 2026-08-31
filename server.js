@@ -151,14 +151,31 @@ app.get('/api/livetv/:channel', async (req, res) => {
       html.match(/"videoDetails":\{"videoId":"([A-Za-z0-9_-]{11})"/) ||
       html.match(/<link rel="canonical" href="https:\/\/www\.youtube\.com\/watch\?v=([A-Za-z0-9_-]{11})"/);
     if (!match) {
-      // Temporary diagnostic: the consent-wall theory didn't hold on the
-      // deployed instance (still 502s with the generic message even after
-      // the CONSENT cookie fix), so surface a snippet of whatever YouTube
-      // actually sent back instead of guessing further blind.
-      const snippet = html.replace(/\s+/g, ' ').trim().slice(0, 500);
-      console.error(`livetv/${channel}: no match. length=${html.length} snippet=${snippet}`);
+      // Temporary diagnostic: the first debug pass showed the deployed
+      // instance is getting served a completely different (WIZ-framework)
+      // YouTube page template than the classic one this scrapes locally —
+      // 1.3MB of real page, not a consent/bot-block wall — so it has none of
+      // the markers this looked for. Report which known markers are/aren't
+      // present so the right one to key off can be picked without more
+      // round trips.
+      const markers = [
+        'videoDetails',
+        'ytInitialPlayerResponse',
+        'ytInitialData',
+        '"videoId":"',
+        'canonical',
+        'isLiveContent',
+        'og:video',
+        'watch?v='
+      ];
+      const found = {};
+      markers.forEach((m) => {
+        const idx = html.indexOf(m);
+        found[m] = idx === -1 ? null : html.slice(idx, idx + 150).replace(/\s+/g, ' ');
+      });
+      console.error(`livetv/${channel}: no match. length=${html.length} markers=${JSON.stringify(found)}`);
       const err = new Error('No live video found for this channel');
-      err.debugSnippet = snippet;
+      err.debugMarkers = found;
       err.debugLength = html.length;
       throw err;
     }
@@ -169,7 +186,7 @@ app.get('/api/livetv/:channel', async (req, res) => {
   } catch (err) {
     console.error(`livetv/${channel} failed:`, err.message);
     if (cached) return res.json(cached.data);
-    res.status(502).json({ error: err.message, debugSnippet: err.debugSnippet, debugLength: err.debugLength });
+    res.status(502).json({ error: err.message, debugMarkers: err.debugMarkers, debugLength: err.debugLength });
   }
 });
 
