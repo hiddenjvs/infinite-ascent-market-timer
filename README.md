@@ -30,18 +30,17 @@ actually current.
   than fetching all 169 possible pairs, the backend fetches each currency's
   rate against USD once and the frontend triangulates every cross rate from
   that — 13 fetches instead of 169.
-- **Live financial news ticker** in the header — a classic auto-scrolling
-  headline tape pulled from four sources, updating on a real cadence (see
-  below), with headlines that link through to the original article.
+- **Live financial news ticker** in the header — one headline at a time,
+  rolling to the next every 20s pulled from four sources, with headlines
+  that link through to the original article.
 - **Markets/FX/News health indicators** — small live-status badges (green
   "LIVE" / amber "DEGRADED n/total" / red "DOWN") next to the relevant
   section headings and in a status log under the logo, driven by the actual
   success/failure of each refresh cycle, not decorative.
 - **Auto-refreshing throughout**: local clock and countdowns tick every
-  second (pure client-side math, no network); index prices, charts, and the
-  FX matrix pull fresh data every 20s; news headlines refresh every 90s —
-  each tied to what the underlying free API can reasonably sustain without
-  getting rate-limited.
+  second (pure client-side math, no network); index prices, charts, the FX
+  matrix, and the news headline all advance together every 20s, driven by
+  one shared refresh cycle rather than independent timers.
 
 ## Run it locally
 

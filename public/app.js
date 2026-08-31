@@ -593,12 +593,16 @@ async function refreshAll() {
   const marketsSucceeded = panelResults.filter(Boolean).length;
   updateApiStatus('markets', marketsSucceeded, panels.length);
   updateApiStatus('fx', fxResult.succeeded, fxResult.total);
+  await advanceNews();
   pulseLogo();
 }
 
 // ---------- Market news ticker ----------
+// One headline shown at a time, rolling to the next on the SAME 20s cycle as
+// refreshAll() (not a separate timer) so it's synced with the market/FX pulse.
 
 let newsHeadlines = [];
+let newsIndex = -1;
 
 function escapeHtml(str) {
   return str.replace(/[&<>"']/g, (c) => ({
@@ -610,39 +614,24 @@ function escapeHtml(str) {
   })[c]);
 }
 
-function renderNewsTicker() {
-  const track = document.getElementById('news-ticker-track');
-  if (!track) return;
+function renderHeadline(item) {
+  const wrap = document.getElementById('news-headline');
+  if (!wrap) return;
 
-  if (!newsHeadlines.length) {
-    track.innerHTML = '<span class="news-ticker-item">Headlines unavailable</span>';
-    return;
-  }
+  wrap.innerHTML = item
+    ? `<span class="source">${escapeHtml(item.source)}</span>${
+        item.link
+          ? `<a class="headline-text" href="${item.link}" target="_blank" rel="noopener noreferrer" title="${escapeHtml(item.headline)}">${escapeHtml(item.headline)}</a>`
+          : `<span class="headline-text">${escapeHtml(item.headline)}</span>`
+      }`
+    : '<span class="headline-text">Headlines unavailable</span>';
 
-  const itemsHtml = newsHeadlines
-    .map((n) => {
-      const inner = `<span class="source">${escapeHtml(n.source)}</span>${escapeHtml(n.headline)}`;
-      return n.link
-        ? `<a class="news-ticker-item" href="${n.link}" target="_blank" rel="noopener noreferrer">${inner}</a>`
-        : `<span class="news-ticker-item">${inner}</span>`;
-    })
-    .join('<span class="sep">•</span>');
-
-  // Duplicated back-to-back so the translateX(-50%) loop is seamless.
-  track.innerHTML = itemsHtml + itemsHtml;
-
-  // Constant scroll speed regardless of how much text loaded.
-  requestAnimationFrame(() => {
-    const halfWidth = track.scrollWidth / 2;
-    const pxPerSecond = 55;
-    const duration = Math.max(20, halfWidth / pxPerSecond);
-    track.style.setProperty('--ticker-duration', `${duration}s`);
-  });
+  wrap.classList.remove('rolling');
+  void wrap.offsetWidth; // force reflow so the roll-in restarts every time
+  wrap.classList.add('rolling');
 }
 
-let lastNewsKey = '';
-
-async function loadNews() {
+async function advanceNews() {
   const dot = document.querySelector('[data-role="news-live-dot"]');
   try {
     const res = await fetch('/api/news');
@@ -650,25 +639,20 @@ async function loadNews() {
     if (!Array.isArray(data) || data.length === 0) throw new Error('empty');
     newsHeadlines = data;
     if (dot) dot.className = 'live-dot ok';
-
-    // Only rebuild the DOM (which restarts the scroll animation) when the
-    // headline set actually changed — otherwise every poll would visibly
-    // snap the ticker back to the start even with nothing new to show.
-    const key = data.map((n) => n.headline).join('|');
-    if (key !== lastNewsKey) {
-      lastNewsKey = key;
-      renderNewsTicker();
-    }
   } catch (err) {
     if (dot) dot.className = 'live-dot down';
-    if (!newsHeadlines.length) renderNewsTicker();
   }
+
+  if (!newsHeadlines.length) {
+    renderHeadline(null);
+    return;
+  }
+  newsIndex = (newsIndex + 1) % newsHeadlines.length;
+  renderHeadline(newsHeadlines[newsIndex]);
 }
 
 async function init() {
   initFx();
-  loadNews();
-  setInterval(loadNews, 90 * 1000); // matches the backend's 90s cache on the news feeds
   const main = document.getElementById('markets-main');
   try {
     const markets = window.__BOOTSTRAP__.markets;
