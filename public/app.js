@@ -910,9 +910,9 @@ function initWatchlistSearch() {
 // paywalled), which is why it's not in this list.
 const LIVETV_SOURCES = [
   { id: 'bloomberg', label: 'Bloomberg TV', channel: 'UCIALMKvObZNtJ6AmdCLP7Lg' },
-  { id: 'nbc', label: 'NBC News NOW', channel: 'UCPgMAS8woHJ_o_OZdTR7kcQ' },
-  { id: 'cnbc', label: 'CNBC', channel: 'UCF8HUTbUwPKh2Q-KpGOCVGw' },
-  { id: 'sky', label: 'Sky News', channel: 'UCF3HqeLrCkZgARQfyqj1m-g' }
+  { id: 'nbc', label: 'NBC News NOW', channel: 'UCeY0bbntWzzVIaj2z3QigXg' },
+  { id: 'cnbc', label: 'CNBC', channel: 'UCvJJ_dzjViJCoLf5uKUTwoA' },
+  { id: 'sky', label: 'Sky News', channel: 'UCoMdktPbSTixAyNGwb-UYkQ' }
 ];
 const LIVETV_KEY = 'livetv:source';
 
