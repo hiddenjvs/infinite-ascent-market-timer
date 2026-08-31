@@ -445,7 +445,7 @@ function buildMarketCard(market, removable) {
   if (removable) {
     card.querySelector('[data-role="remove-market"]').addEventListener('click', (e) => {
       e.stopPropagation();
-      removeExtraMarket(market.id);
+      removeMarket(market.id);
     });
   }
 
@@ -829,11 +829,11 @@ function initLayoutTemplatePicker() {
 // entry in the same + Add Window menu rather than a re-add-by-search flow.
 const CLOSED_PANELS_KEY = 'closed-panels';
 const CORE_PANELS = [
-  { id: 'markets', label: 'Markets' },
-  { id: 'commodities', label: 'Commodities' },
-  { id: 'bonds', label: 'Bonds' },
-  { id: 'watchlist', label: 'Watchlist' },
-  { id: 'fx', label: 'FX Matrix' }
+  { id: 'markets', label: 'Markets Panel', icon: '🗂️' },
+  { id: 'commodities', label: 'Commodities Panel', icon: '🛢️' },
+  { id: 'bonds', label: 'Bonds Panel', icon: '🏦' },
+  { id: 'watchlist', label: 'Watchlist Panel', icon: '⭐' },
+  { id: 'fx', label: 'FX Matrix', icon: '💱' }
 ];
 
 function getClosedPanels() {
@@ -1214,6 +1214,12 @@ async function tickerSearch(q, kind) {
 
 // ---------- Markets: add more exchanges from a curated pool ----------
 const MARKETS_EXTRA_KEY = 'markets:extra-added';
+// The 11 default exchanges (window.__BOOTSTRAP__.markets) aren't a separate
+// opt-in pool like the curated "extra" exchanges — they just start visible.
+// Removing one records it here instead of anywhere in MARKETS_EXTRA_KEY, and
+// the search box draws from both pools so a removed default is searchable
+// again exactly like anything else.
+const CORE_MARKETS_REMOVED_KEY = 'markets:core-removed';
 
 function getExtraMarketIds() {
   try {
@@ -1232,9 +1238,31 @@ function saveExtraMarketIds(ids) {
   }
 }
 
-function addMarketToDom(market, removable) {
+function getRemovedCoreMarketIds() {
+  try {
+    const list = JSON.parse(localStorage.getItem(CORE_MARKETS_REMOVED_KEY));
+    return Array.isArray(list) ? list : [];
+  } catch (err) {
+    return [];
+  }
+}
+
+function saveRemovedCoreMarketIds(ids) {
+  try {
+    localStorage.setItem(CORE_MARKETS_REMOVED_KEY, JSON.stringify(ids));
+  } catch (err) {
+    /* localStorage unavailable — just won't persist across reloads */
+  }
+}
+
+function isCoreMarket(marketId) {
+  const corePool = (window.__BOOTSTRAP__ && window.__BOOTSTRAP__.markets) || [];
+  return corePool.some((m) => m.id === marketId);
+}
+
+function addMarketToDom(market) {
   const status = computeMarketStatus(market, new Date());
-  const entry = buildMarketCard(market, removable);
+  const entry = buildMarketCard(market, true);
   entry.isOpen = status.isOpen;
   (status.isOpen ? openGrid : closedGrid).appendChild(entry.card);
   applySavedOrder(entry.card.parentElement, sortKeyFor(entry.card.parentElement));
@@ -1242,16 +1270,28 @@ function addMarketToDom(market, removable) {
   updateCounts();
 }
 
-function addExtraMarket(market) {
-  const ids = getExtraMarketIds();
-  if (ids.includes(market.id)) return;
-  ids.push(market.id);
-  saveExtraMarketIds(ids);
-  addMarketToDom(market, true);
+// Handles both pools: a default exchange the user removed earlier just gets
+// un-removed; anything else joins the curated "extra" list, same as before.
+function addMarket(market) {
+  if (isCoreMarket(market.id)) {
+    saveRemovedCoreMarketIds(getRemovedCoreMarketIds().filter((id) => id !== market.id));
+  } else {
+    const ids = getExtraMarketIds();
+    if (ids.includes(market.id)) return;
+    ids.push(market.id);
+    saveExtraMarketIds(ids);
+  }
+  addMarketToDom(market);
 }
 
-function removeExtraMarket(marketId) {
-  saveExtraMarketIds(getExtraMarketIds().filter((id) => id !== marketId));
+function removeMarket(marketId) {
+  if (isCoreMarket(marketId)) {
+    const removed = getRemovedCoreMarketIds();
+    if (!removed.includes(marketId)) removed.push(marketId);
+    saveRemovedCoreMarketIds(removed);
+  } else {
+    saveExtraMarketIds(getExtraMarketIds().filter((id) => id !== marketId));
+  }
 
   const entry = statusEls.find((e) => e.market.id === marketId);
   if (!entry) return;
@@ -1271,11 +1311,20 @@ function initMarketsSearch() {
   initSearchAdd('markets-input', 'markets-results', {
     emptyText: 'No matching exchange (or already added)',
     search: (q) => {
-      const pool = (window.__BOOTSTRAP__ && window.__BOOTSTRAP__.marketsExtra) || [];
-      const added = new Set(getExtraMarketIds());
+      const corePool = (window.__BOOTSTRAP__ && window.__BOOTSTRAP__.markets) || [];
+      const extraPool = (window.__BOOTSTRAP__ && window.__BOOTSTRAP__.marketsExtra) || [];
+      const removedCore = new Set(getRemovedCoreMarketIds());
+      const addedExtra = new Set(getExtraMarketIds());
+      // "Already shown" (excluded from results) = default exchanges still
+      // visible, plus extras the user has already added — everything else
+      // (removed defaults included) is fair game to search back up.
+      const shown = new Set([
+        ...corePool.filter((m) => !removedCore.has(m.id)).map((m) => m.id),
+        ...extraPool.filter((m) => addedExtra.has(m.id)).map((m) => m.id)
+      ]);
       const ql = q.toLowerCase();
-      return pool
-        .filter((m) => !added.has(m.id))
+      return [...corePool, ...extraPool]
+        .filter((m) => !shown.has(m.id))
         .filter(
           (m) =>
             m.name.toLowerCase().includes(ql) ||
@@ -1285,7 +1334,7 @@ function initMarketsSearch() {
         .slice(0, 8)
         .map((m) => ({ symbol: m.shortName, name: m.name, exchange: m.country, _market: m }));
     },
-    onSelect: (item) => addExtraMarket(item._market)
+    onSelect: (item) => addMarket(item._market)
   });
 }
 
@@ -1631,11 +1680,6 @@ function initAddWindowMenu() {
   const dashboardPanels = document.getElementById('dashboard-panels');
   if (!dashboardPanels) return;
 
-  const closedIds = getClosedPanels();
-  const restoreButtons = CORE_PANELS.filter((p) => closedIds.includes(p.id))
-    .map((p) => `<button type="button" data-restore="${p.id}">🔁 Restore ${escapeHtml(p.label)}</button>`)
-    .join('');
-
   const tile = document.createElement('div');
   tile.className = 'dashboard-panel add-panel-tile';
   tile.innerHTML = `
@@ -1646,20 +1690,31 @@ function initAddWindowMenu() {
       <button type="button" data-type="commodity">🛢️ Commodity</button>
       <button type="button" data-type="bond">🏦 Bond</button>
       <button type="button" data-type="market">🌍 Market</button>
-      ${restoreButtons}
+      <div data-role="restore-slot"></div>
     </div>
   `;
   const menu = tile.querySelector('[data-role="menu"]');
+  const restoreSlot = menu.querySelector('[data-role="restore-slot"]');
 
-  menu.querySelectorAll('[data-restore]').forEach((btn) => {
-    btn.addEventListener('click', (e) => {
-      e.stopPropagation();
-      restoreCorePanel(btn.dataset.restore);
+  // Rebuilt on every open (not just once at page load) — a panel closed
+  // earlier in the same session needs to show up here without a reload.
+  function renderRestoreButtons() {
+    const closedIds = getClosedPanels();
+    restoreSlot.innerHTML = CORE_PANELS.filter((p) => closedIds.includes(p.id))
+      .map((p) => `<button type="button" data-restore="${p.id}">${p.icon} ${escapeHtml(p.label)}</button>`)
+      .join('');
+    restoreSlot.querySelectorAll('[data-restore]').forEach((btn) => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        restoreCorePanel(btn.dataset.restore);
+      });
     });
-  });
+  }
+  renderRestoreButtons();
 
   tile.addEventListener('click', (e) => {
     if (e.target.closest('[data-role="menu"]')) return;
+    if (menu.classList.contains('hidden')) renderRestoreButtons();
     menu.classList.toggle('hidden');
   });
 
@@ -1860,6 +1915,7 @@ const LAYOUT_STATE_KEYS = [
   'commodities:added',
   'bonds:added',
   MARKETS_EXTRA_KEY,
+  CORE_MARKETS_REMOVED_KEY,
   'livetv:tiles',
   STANDALONE_TILES_KEY,
   PANEL_SPAN_KEY,
@@ -2086,19 +2142,22 @@ async function init() {
 
     // Sort by soonest upcoming event so the most time-sensitive markets lead each group.
     // Extra markets the user has previously added (from the curated pool)
-    // join the core 11 here, same treatment, just marked removable.
+    // join the core 11 here; every card is removable — the "core 11" is just
+    // a starting point, not a fixed set (removed ones are tracked separately
+    // and stay searchable again via initMarketsSearch).
     const now = new Date();
+    const removedCoreIds = new Set(getRemovedCoreMarketIds());
     const extraPool = (window.__BOOTSTRAP__ && window.__BOOTSTRAP__.marketsExtra) || [];
     const extraIds = new Set(getExtraMarketIds());
     const extraMarkets = extraPool.filter((m) => extraIds.has(m.id));
     const withStatus = [
-      ...markets.map((market) => ({ market, status: computeMarketStatus(market, now), removable: false })),
-      ...extraMarkets.map((market) => ({ market, status: computeMarketStatus(market, now), removable: true }))
+      ...markets.filter((m) => !removedCoreIds.has(m.id)).map((market) => ({ market, status: computeMarketStatus(market, now) })),
+      ...extraMarkets.map((market) => ({ market, status: computeMarketStatus(market, now) }))
     ];
     withStatus.sort((a, b) => a.status.target - b.status.target);
 
-    withStatus.forEach(({ market, status, removable }) => {
-      const entry = buildMarketCard(market, removable);
+    withStatus.forEach(({ market, status }) => {
+      const entry = buildMarketCard(market, true);
       entry.isOpen = status.isOpen;
       (status.isOpen ? openGrid : closedGrid).appendChild(entry.card);
       buildIndexTickers(market, entry.card);
