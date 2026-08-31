@@ -1,0 +1,178 @@
+[
+  {
+    "id": "nyse",
+    "name": "New York Stock Exchange",
+    "shortName": "NYSE",
+    "city": "New York",
+    "country": "United States",
+    "flag": "🇺🇸",
+    "timezone": "America/New_York",
+    "open": "09:30",
+    "close": "16:00",
+    "days": [1, 2, 3, 4, 5],
+    "indexes": [
+      { "symbol": "^GSPC", "name": "S&P 500" },
+      { "symbol": "^DJI", "name": "Dow Jones Industrial Average" }
+    ]
+  },
+  {
+    "id": "nasdaq",
+    "name": "NASDAQ",
+    "shortName": "NASDAQ",
+    "city": "New York",
+    "country": "United States",
+    "flag": "🇺🇸",
+    "timezone": "America/New_York",
+    "open": "09:30",
+    "close": "16:00",
+    "days": [1, 2, 3, 4, 5],
+    "indexes": [
+      { "symbol": "^IXIC", "name": "NASDAQ Composite" },
+      { "symbol": "^NDX", "name": "NASDAQ 100" }
+    ]
+  },
+  {
+    "id": "lse",
+    "name": "London Stock Exchange",
+    "shortName": "LSE",
+    "city": "London",
+    "country": "United Kingdom",
+    "flag": "🇬🇧",
+    "timezone": "Europe/London",
+    "open": "08:00",
+    "close": "16:30",
+    "days": [1, 2, 3, 4, 5],
+    "indexes": [
+      { "symbol": "^FTSE", "name": "FTSE 100" },
+      { "symbol": "^FTMC", "name": "FTSE 250" }
+    ]
+  },
+  {
+    "id": "euronext-paris",
+    "name": "Euronext Paris",
+    "shortName": "Euronext",
+    "city": "Paris",
+    "country": "France",
+    "flag": "🇫🇷",
+    "timezone": "Europe/Paris",
+    "open": "09:00",
+    "close": "17:30",
+    "days": [1, 2, 3, 4, 5],
+    "indexes": [
+      { "symbol": "^FCHI", "name": "CAC 40" },
+      { "symbol": "^N100", "name": "Euronext 100" }
+    ]
+  },
+  {
+    "id": "deutsche-boerse",
+    "name": "Deutsche Börse (Xetra)",
+    "shortName": "Xetra",
+    "city": "Frankfurt",
+    "country": "Germany",
+    "flag": "🇩🇪",
+    "timezone": "Europe/Berlin",
+    "open": "09:00",
+    "close": "17:30",
+    "days": [1, 2, 3, 4, 5],
+    "indexes": [
+      { "symbol": "^GDAXI", "name": "DAX" },
+      { "symbol": "^MDAXI", "name": "MDAX" }
+    ]
+  },
+  {
+    "id": "jpx",
+    "name": "Japan Exchange Group",
+    "shortName": "JPX",
+    "city": "Tokyo",
+    "country": "Japan",
+    "flag": "🇯🇵",
+    "timezone": "Asia/Tokyo",
+    "open": "09:00",
+    "close": "15:00",
+    "days": [1, 2, 3, 4, 5],
+    "indexes": [
+      { "symbol": "^N225", "name": "Nikkei 225" },
+      { "symbol": "1306.T", "name": "TOPIX (ETF proxy)" }
+    ]
+  },
+  {
+    "id": "sse",
+    "name": "Shanghai Stock Exchange",
+    "shortName": "SSE",
+    "city": "Shanghai",
+    "country": "China",
+    "flag": "🇨🇳",
+    "timezone": "Asia/Shanghai",
+    "open": "09:30",
+    "close": "15:00",
+    "days": [1, 2, 3, 4, 5],
+    "indexes": [
+      { "symbol": "000001.SS", "name": "SSE Composite" },
+      { "symbol": "000300.SS", "name": "CSI 300" }
+    ]
+  },
+  {
+    "id": "szse",
+    "name": "Shenzhen Stock Exchange",
+    "shortName": "SZSE",
+    "city": "Shenzhen",
+    "country": "China",
+    "flag": "🇨🇳",
+    "timezone": "Asia/Shanghai",
+    "open": "09:30",
+    "close": "15:00",
+    "days": [1, 2, 3, 4, 5],
+    "indexes": [
+      { "symbol": "399001.SZ", "name": "SZSE Component" },
+      { "symbol": "399006.SZ", "name": "ChiNext" }
+    ]
+  },
+  {
+    "id": "hkex",
+    "name": "Hong Kong Stock Exchange",
+    "shortName": "HKEX",
+    "city": "Hong Kong",
+    "country": "Hong Kong",
+    "flag": "🇭🇰",
+    "timezone": "Asia/Hong_Kong",
+    "open": "09:30",
+    "close": "16:00",
+    "days": [1, 2, 3, 4, 5],
+    "indexes": [
+      { "symbol": "^HSI", "name": "Hang Seng Index" },
+      { "symbol": "^HSCE", "name": "Hang Seng China Enterprises" }
+    ]
+  },
+  {
+    "id": "nasdaq-stockholm",
+    "name": "Nasdaq Stockholm",
+    "shortName": "OMX",
+    "city": "Stockholm",
+    "country": "Sweden",
+    "flag": "🇸🇪",
+    "timezone": "Europe/Stockholm",
+    "open": "09:00",
+    "close": "17:30",
+    "days": [1, 2, 3, 4, 5],
+    "indexes": [
+      { "symbol": "^OMX", "name": "OMX Stockholm 30" },
+      { "symbol": "^OMXSPI", "name": "OMX Stockholm PI" }
+    ]
+  },
+  {
+    "id": "nse",
+    "name": "National Stock Exchange of India",
+    "shortName": "NSE",
+    "city": "Mumbai",
+    "country": "India",
+    "flag": "🇮🇳",
+    "timezone": "Asia/Kolkata",
+    "open": "09:15",
+    "close": "15:30",
+    "days": [1, 2, 3, 4, 5],
+    "indexes": [
+      { "symbol": "^NSEI", "name": "NIFTY 50" },
+      { "symbol": "^BSESN", "name": "BSE SENSEX" }
+    ]
+  }
+]

@@ -1,0 +1,16 @@
+{
+  "name": "infinite-ascent-market-timer",
+  "version": "1.0.0",
+  "description": "Local dashboard: countdowns to the world's top stock market opens/closes plus live, interactive index charts.",
+  "private": true,
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "express": "^4.19.2"
+  }
+}

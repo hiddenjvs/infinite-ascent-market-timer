@@ -1,0 +1,15 @@
+[
+  { "code": "USD", "flag": "🇺🇸", "symbol": null, "invert": false },
+  { "code": "EUR", "flag": "🇪🇺", "symbol": "EURUSD=X", "invert": false },
+  { "code": "GBP", "flag": "🇬🇧", "symbol": "GBPUSD=X", "invert": false },
+  { "code": "AUD", "flag": "🇦🇺", "symbol": "AUDUSD=X", "invert": false },
+  { "code": "NZD", "flag": "🇳🇿", "symbol": "NZDUSD=X", "invert": false },
+  { "code": "JPY", "flag": "🇯🇵", "symbol": "USDJPY=X", "invert": true },
+  { "code": "CNY", "flag": "🇨🇳", "symbol": "USDCNY=X", "invert": true },
+  { "code": "HKD", "flag": "🇭🇰", "symbol": "USDHKD=X", "invert": true },
+  { "code": "INR", "flag": "🇮🇳", "symbol": "USDINR=X", "invert": true },
+  { "code": "SEK", "flag": "🇸🇪", "symbol": "USDSEK=X", "invert": true },
+  { "code": "CHF", "flag": "🇨🇭", "symbol": "USDCHF=X", "invert": true },
+  { "code": "CAD", "flag": "🇨🇦", "symbol": "USDCAD=X", "invert": true },
+  { "code": "SGD", "flag": "🇸🇬", "symbol": "USDSGD=X", "invert": true }
+]

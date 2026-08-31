@@ -1,0 +1,93 @@
+const express = require('express');
+const path = require('path');
+const markets = require('./data/markets.json');
+const fxCurrencies = require('./data/fx.json');
+
+const app = express();
+const PORT = process.env.PORT || 4173;
+
+// Simple in-memory cache to stay well under Yahoo's informal rate limits
+// and keep the dashboard snappy even with 10 markets x 2 indexes = 20 symbols.
+const CACHE_TTL_MS = 20 * 1000;
+const cache = new Map();
+
+const YF_HEADERS = {
+  'User-Agent':
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36',
+  Accept: 'application/json'
+};
+
+app.use(express.static(path.join(__dirname, 'public')));
+
+app.get('/api/markets', (req, res) => {
+  res.json(markets);
+});
+
+app.get('/api/fx', (req, res) => {
+  res.json(fxCurrencies);
+});
+
+app.get('/api/chart/:symbol', async (req, res) => {
+  const { symbol } = req.params;
+  const range = req.query.range || '1d';
+  const interval = req.query.interval || '5m';
+  const cacheKey = `${symbol}|${range}|${interval}`;
+
+  const cached = cache.get(cacheKey);
+  if (cached && Date.now() - cached.at < CACHE_TTL_MS) {
+    return res.json(cached.data);
+  }
+
+  const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(
+    symbol
+  )}?range=${encodeURIComponent(range)}&interval=${encodeURIComponent(interval)}`;
+
+  try {
+    const r = await fetch(url, { headers: YF_HEADERS });
+    if (!r.ok) throw new Error(`Yahoo Finance responded ${r.status}`);
+    const json = await r.json();
+    const result = json?.chart?.result?.[0];
+    if (!result) {
+      const reason = json?.chart?.error?.description || 'No data returned';
+      throw new Error(reason);
+    }
+
+    const { timestamp = [], indicators = {}, meta = {} } = result;
+    const closes = indicators?.quote?.[0]?.close || [];
+    const points = timestamp
+      .map((t, i) => ({ time: t, price: closes[i] }))
+      .filter((p) => typeof p.price === 'number');
+
+    const previousClose = meta.chartPreviousClose ?? meta.previousClose ?? null;
+    const price = meta.regularMarketPrice ?? points[points.length - 1]?.price ?? null;
+    const change = price != null && previousClose ? price - previousClose : null;
+    const changePercent =
+      change != null && previousClose ? (change / previousClose) * 100 : null;
+
+    const payload = {
+      symbol,
+      currency: meta.currency || null,
+      price,
+      previousClose,
+      change,
+      changePercent,
+      dayHigh: meta.regularMarketDayHigh ?? null,
+      dayLow: meta.regularMarketDayLow ?? null,
+      marketTime: meta.regularMarketTime ?? null,
+      marketState: meta.marketState || null,
+      exchangeName: meta.exchangeName || null,
+      points
+    };
+
+    cache.set(cacheKey, { at: Date.now(), data: payload });
+    res.json(payload);
+  } catch (err) {
+    // Serve stale cache rather than nothing if Yahoo hiccups
+    if (cached) return res.json(cached.data);
+    res.status(502).json({ error: err.message, symbol });
+  }
+});
+
+app.listen(PORT, () => {
+  console.log(`Infinite Ascent — Market Timer running at http://localhost:${PORT}`);
+});
