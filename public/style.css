@@ -133,7 +133,13 @@ body {
 .api-status {
   display: flex;
   flex-wrap: wrap;
+  align-items: center;
   gap: 14px;
+  background: var(--surface-2);
+  border: 1px solid var(--hairline-soft);
+  border-radius: var(--radius-md);
+  padding: 8px 14px;
+  width: fit-content;
 }
 
 .api-chip {
