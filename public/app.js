@@ -900,6 +900,61 @@ function initWatchlistSearch() {
   });
 }
 
+// ---------- Live TV ----------
+// Official YouTube live streams, embedded via the `live_stream?channel=`
+// pattern — this tracks whatever is CURRENTLY live on that channel rather
+// than a hardcoded video id, so it doesn't go stale when a stream ends and
+// a new one starts. Not scraping or bypassing anything — this is YouTube's
+// own sanctioned embed API. Bloomberg/NBC/CNBC/Sky News all run legitimate
+// free 24/7 live news streams this way; CNN doesn't (their live feed is
+// paywalled), which is why it's not in this list.
+const LIVETV_SOURCES = [
+  { id: 'bloomberg', label: 'Bloomberg TV', channel: 'UCIALMKvObZNtJ6AmdCLP7Lg' },
+  { id: 'nbc', label: 'NBC News NOW', channel: 'UCPgMAS8woHJ_o_OZdTR7kcQ' },
+  { id: 'cnbc', label: 'CNBC', channel: 'UCF8HUTbUwPKh2Q-KpGOCVGw' },
+  { id: 'sky', label: 'Sky News', channel: 'UCF3HqeLrCkZgARQfyqj1m-g' }
+];
+const LIVETV_KEY = 'livetv:source';
+
+function initLiveTv() {
+  const tabsEl = document.getElementById('livetv-tabs');
+  const frame = document.getElementById('livetv-frame');
+  if (!tabsEl || !frame) return;
+
+  let saved;
+  try {
+    saved = localStorage.getItem(LIVETV_KEY);
+  } catch (err) {
+    saved = null;
+  }
+
+  function setSource(id) {
+    const src = LIVETV_SOURCES.find((s) => s.id === id) || LIVETV_SOURCES[0];
+    // youtube-nocookie.com is YouTube's own privacy-enhanced embed domain —
+    // same live_stream API, but it doesn't set tracking cookies until the
+    // viewer actually interacts with the player.
+    frame.src = `https://www.youtube-nocookie.com/embed/live_stream?channel=${src.channel}&autoplay=1&mute=1`;
+    [...tabsEl.children].forEach((b) => b.classList.toggle('active', b.dataset.id === src.id));
+    try {
+      localStorage.setItem(LIVETV_KEY, src.id);
+    } catch (err) {
+      /* localStorage unavailable — selection just won't persist */
+    }
+  }
+
+  LIVETV_SOURCES.forEach((s) => {
+    const btn = document.createElement('button');
+    btn.className = 'livetv-tab';
+    btn.type = 'button';
+    btn.textContent = s.label;
+    btn.dataset.id = s.id;
+    btn.addEventListener('click', () => setSource(s.id));
+    tabsEl.appendChild(btn);
+  });
+
+  setSource(LIVETV_SOURCES.some((s) => s.id === saved) ? saved : LIVETV_SOURCES[0].id);
+}
+
 // ---------- Detail modal (double-click any instrument tile) ----------
 
 let modalChart = null;
@@ -1119,6 +1174,7 @@ async function init() {
     initCommodities();
     initWatchlist();
     initWatchlistSearch();
+    initLiveTv();
 
     // Dashboard-level reordering (drag a panel by its grip handle).
     const dashboardPanels = document.getElementById('dashboard-panels');
