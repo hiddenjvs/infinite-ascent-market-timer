@@ -36,6 +36,19 @@ const YF_HEADERS = {
   Accept: 'application/json'
 };
 
+// Datacenter IPs (Render included) get served YouTube's cookie-consent
+// interstitial instead of the actual page — it has no videoDetails/canonical
+// tag at all, which is why this worked from a residential IP locally but
+// 502'd as "no live video found" once deployed. Sending a pre-accepted
+// CONSENT cookie skips that interstitial.
+const YOUTUBE_HEADERS = {
+  'User-Agent':
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36',
+  Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+  'Accept-Language': 'en-US,en;q=0.9',
+  Cookie: 'CONSENT=YES+1'
+};
+
 app.use(express.static(path.join(__dirname, 'public'), { index: false }));
 
 app.get('/', (req, res) => {
@@ -129,16 +142,24 @@ app.get('/api/livetv/:channel', async (req, res) => {
 
   try {
     const url = `https://www.youtube.com/channel/${encodeURIComponent(channel)}/live`;
-    const r = await fetch(url, { headers: YF_HEADERS });
+    const r = await fetch(url, { headers: YOUTUBE_HEADERS });
     if (!r.ok) throw new Error(`YouTube responded ${r.status}`);
     const html = await r.text();
-    const match = html.match(/"videoDetails":\{"videoId":"([A-Za-z0-9_-]{11})"/);
-    if (!match) throw new Error('No live video found for this channel');
+    // videoDetails is present on the actual watch page; the canonical link
+    // tag is a fallback that's survived past YouTube markup changes better.
+    const match =
+      html.match(/"videoDetails":\{"videoId":"([A-Za-z0-9_-]{11})"/) ||
+      html.match(/<link rel="canonical" href="https:\/\/www\.youtube\.com\/watch\?v=([A-Za-z0-9_-]{11})"/);
+    if (!match) {
+      const isConsentWall = /consent\.youtube\.com|Before you continue to YouTube/i.test(html);
+      throw new Error(isConsentWall ? 'YouTube served a consent page instead of the live page' : 'No live video found for this channel');
+    }
 
     const data = { videoId: match[1] };
     livetvCache.set(channel, { at: Date.now(), data });
     res.json(data);
   } catch (err) {
+    console.error(`livetv/${channel} failed:`, err.message);
     if (cached) return res.json(cached.data);
     res.status(502).json({ error: err.message });
   }
