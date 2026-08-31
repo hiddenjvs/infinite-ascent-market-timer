@@ -139,28 +139,40 @@ function pulseLogo() {
 }
 
 function updateApiStatus(key, succeeded, total) {
-  const dot = document.querySelector(`[data-role="${key}-dot"]`);
-  const state = document.querySelector(`[data-role="${key}-state"]`);
-  if (!dot || !state) return;
-
-  let cls, label;
+  let cls, label, liveLabel;
   if (total === 0) {
     cls = 'down';
     label = 'NO DATA';
+    liveLabel = 'DOWN';
   } else if (succeeded === total) {
     cls = 'ok';
     label = 'CONNECTED';
+    liveLabel = 'LIVE';
   } else if (succeeded > 0) {
     cls = 'degraded';
     label = `PARTIAL ${succeeded}/${total}`;
+    liveLabel = 'DEGRADED';
   } else {
     cls = 'down';
     label = 'UNREACHABLE';
+    liveLabel = 'DOWN';
   }
 
-  dot.className = `api-dot ${cls}`;
-  const time = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-  state.textContent = `${label} · ${time}`;
+  const dot = document.querySelector(`[data-role="${key}-dot"]`);
+  const state = document.querySelector(`[data-role="${key}-state"]`);
+  if (dot) dot.className = `api-dot ${cls}`;
+  if (state) {
+    const time = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    state.textContent = `${label} · ${time}`;
+  }
+
+  const liveDot = document.querySelector(`[data-role="${key}-live-dot"]`);
+  const liveText = document.querySelector(`[data-role="${key}-live-text"]`);
+  if (liveDot) liveDot.className = `live-dot ${cls}`;
+  if (liveText) {
+    liveText.className = `live-text ${cls}`;
+    liveText.textContent = liveLabel;
+  }
 }
 
 // ---------- Chart ranges ----------
@@ -592,7 +604,13 @@ async function init() {
 
     main.innerHTML = `
       <section class="market-section">
-        <h2 class="section-title open-title"><span class="dot"></span>Open now — <span class="count" data-role="open-count">0</span></h2>
+        <h2 class="section-title open-title">
+          <span class="dot"></span>Open now — <span class="count" data-role="open-count">0</span>
+          <span class="live-badge">
+            <span class="live-dot" data-role="markets-live-dot"></span>
+            <span class="live-text" data-role="markets-live-text">SYNCING</span>
+          </span>
+        </h2>
         <div class="markets-grid" data-role="open-grid"></div>
       </section>
       <section class="market-section">
