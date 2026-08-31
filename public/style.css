@@ -768,9 +768,103 @@ a.headline-text:hover {
   color: var(--text-faint);
 }
 
-.reorg-hint .grip {
+.reorg-hint .grip,
+.reorg-hint b {
   color: var(--text-dim);
   letter-spacing: -1px;
+  font-weight: 700;
+}
+
+/* ============================================================
+   Saved dashboard layouts (workspaces you can switch between)
+   ============================================================ */
+
+.layouts-bar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 10px 16px 0;
+}
+
+.layouts-label {
+  flex: none;
+  font-family: var(--mono);
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  color: var(--text-faint);
+}
+
+.layouts-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.layout-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 4px 3px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--hairline);
+  background: var(--surface-2);
+}
+
+.layout-tab.active {
+  border-color: var(--accent-contrast);
+  background: rgba(10, 132, 255, 0.14);
+}
+
+.layout-tab-name {
+  background: none;
+  border: none;
+  padding: 0;
+  color: var(--text-dim);
+  font-family: var(--mono);
+  font-size: 10.5px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.layout-tab.active .layout-tab-name { color: var(--text); }
+
+.layout-tab-remove {
+  flex: none;
+  width: 15px;
+  height: 15px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: none;
+  color: var(--text-faint);
+  font-size: 9px;
+  line-height: 1;
+  cursor: pointer;
+  border-radius: 50%;
+}
+
+.layout-tab-remove:hover { color: var(--red); background: rgba(255, 69, 58, 0.12); }
+
+.layouts-save-btn {
+  flex: none;
+  background: transparent;
+  border: 1px dashed var(--hairline);
+  color: var(--text-faint);
+  font-family: var(--mono);
+  font-size: 10px;
+  font-weight: 600;
+  padding: 3px 10px;
+  border-radius: 999px;
+  cursor: pointer;
+  transition: border-color 150ms var(--ease-spring), color 150ms var(--ease-spring);
+}
+
+.layouts-save-btn:hover {
+  border-color: var(--accent);
+  color: var(--text);
 }
 
 #dashboard-panels {
@@ -806,10 +900,10 @@ a.headline-text:hover {
 .panel-drag-handle {
   display: flex;
   align-items: center;
+  justify-content: space-between;
   gap: 6px;
-  margin: 10px 16px 2px;
+  margin: 10px 12px 2px;
   padding: 3px 8px;
-  width: fit-content;
   font-family: var(--mono);
   font-size: 9.5px;
   font-weight: 700;
@@ -831,6 +925,12 @@ a.headline-text:hover {
 .panel-drag-handle .grip {
   letter-spacing: -1px;
   font-size: 12px;
+}
+
+.panel-handle-actions {
+  display: flex;
+  align-items: center;
+  gap: 5px;
 }
 
 /* ============================================================
@@ -916,8 +1016,8 @@ a.headline-text:hover {
 
 .instrument-remove {
   flex: none;
-  width: 18px;
-  height: 18px;
+  width: 24px;
+  height: 24px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -1283,11 +1383,6 @@ a.headline-text:hover {
   line-height: 1;
 }
 
-.panel-drag-handle.has-remove {
-  width: auto;
-  justify-content: space-between;
-}
-
 .panel-drag-handle .instrument-remove {
-  margin-left: 6px;
+  flex: none;
 }

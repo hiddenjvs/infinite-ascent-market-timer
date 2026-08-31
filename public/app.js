@@ -597,6 +597,47 @@ function makeSortable(container, storageKey, { handleSelector, afterReorder } = 
   });
 }
 
+// ---------- Panel width toggle ----------
+// Any panel — not just Live TV — can be compact (sits in the matrix next to
+// other panels) or full width. Default is per panel type, but the user's
+// choice always wins and persists.
+const PANEL_WIDTH_KEY = 'panelwidth:state';
+
+function getPanelWidthState() {
+  try {
+    const s = JSON.parse(localStorage.getItem(PANEL_WIDTH_KEY));
+    return s && typeof s === 'object' ? s : {};
+  } catch (err) {
+    return {};
+  }
+}
+
+function setPanelWideState(id, wide) {
+  const state = getPanelWidthState();
+  state[id] = wide;
+  try {
+    localStorage.setItem(PANEL_WIDTH_KEY, JSON.stringify(state));
+  } catch (err) {
+    /* localStorage unavailable — width choice just won't persist */
+  }
+}
+
+function initPanelWidthToggle(panelEl, defaultWide) {
+  const id = panelEl.dataset.sortId;
+  const state = getPanelWidthState();
+  const wide = Object.prototype.hasOwnProperty.call(state, id) ? state[id] : defaultWide;
+  panelEl.classList.toggle('panel-wide', wide);
+
+  const btn = panelEl.querySelector('[data-role="widthtoggle"]');
+  if (!btn) return;
+  btn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    const nowWide = !panelEl.classList.contains('panel-wide');
+    panelEl.classList.toggle('panel-wide', nowWide);
+    setPanelWideState(id, nowWide);
+  });
+}
+
 // ---------- FX cross-rate matrix ----------
 // Classic Bloomberg FXC-style matrix: currencies on both axes, diagonal blank,
 // cell[row][col] = how much of the column currency buys 1 unit of the row currency.
@@ -960,9 +1001,12 @@ function buildLiveTvPanel(tileId, initialSourceId) {
   section.dataset.livetvTile = 'true';
   section.dataset.currentSource = initialSourceId;
   section.innerHTML = `
-    <div class="panel-drag-handle has-remove" draggable="true">
+    <div class="panel-drag-handle" draggable="true">
       <span><span class="grip">⠿</span> LIVE TV</span>
-      <button class="instrument-remove" type="button" data-role="remove" title="Remove this tile">✕</button>
+      <span class="panel-handle-actions">
+        <button class="instrument-remove" type="button" data-role="widthtoggle" title="Toggle full width">⤢</button>
+        <button class="instrument-remove" type="button" data-role="remove" title="Remove this tile">✕</button>
+      </span>
     </div>
     <div class="livetv-main">
       <div class="livetv-tabs" data-role="tabs"></div>
@@ -1036,6 +1080,7 @@ function buildLiveTvPanel(tileId, initialSourceId) {
   });
 
   setSource(initialSourceId);
+  initPanelWidthToggle(section, false); // TV tiles default to compact
   return section;
 }
 
@@ -1178,6 +1223,139 @@ document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape') closeDetailModal();
 });
 
+// ---------- Saved dashboard layouts ----------
+// A "layout" is just a named snapshot of every localStorage key that
+// describes the current arrangement (panel order/width, market-card order,
+// commodities/watchlist order, the watchlist itself, the set of Live TV
+// tiles). Switching layouts writes that snapshot back and reloads the page
+// — simpler and far more robust than trying to tear down and rebuild every
+// dynamic section (charts, timers, intervals) in place.
+const LAYOUTS_LIST_KEY = 'layouts:list';
+const LAYOUTS_ACTIVE_KEY = 'layouts:active';
+const LAYOUT_STATE_KEYS = [
+  'order:dashboard-panels',
+  'order:markets-open',
+  'order:markets-closed',
+  'order:commodities',
+  'order:watchlist',
+  'watchlist:tickers',
+  'livetv:tiles',
+  PANEL_WIDTH_KEY
+];
+
+function getLayoutList() {
+  try {
+    const list = JSON.parse(localStorage.getItem(LAYOUTS_LIST_KEY));
+    return Array.isArray(list) ? list : [];
+  } catch (err) {
+    return [];
+  }
+}
+
+function saveLayoutList(list) {
+  try {
+    localStorage.setItem(LAYOUTS_LIST_KEY, JSON.stringify(list));
+  } catch (err) {
+    /* localStorage unavailable — layouts just won't persist */
+  }
+}
+
+function getActiveLayoutId() {
+  try {
+    return localStorage.getItem(LAYOUTS_ACTIVE_KEY);
+  } catch (err) {
+    return null;
+  }
+}
+
+function saveCurrentAsLayout(name) {
+  const id = `layout-${Date.now()}`;
+  const list = getLayoutList();
+  list.push({ id, name });
+  saveLayoutList(list);
+
+  const snap = {};
+  LAYOUT_STATE_KEYS.forEach((k) => {
+    snap[k] = localStorage.getItem(k);
+  });
+  try {
+    localStorage.setItem(`layouts:data:${id}`, JSON.stringify(snap));
+    localStorage.setItem(LAYOUTS_ACTIVE_KEY, id);
+  } catch (err) {
+    /* localStorage unavailable — layout just won't persist */
+  }
+  renderLayoutTabs();
+}
+
+function switchToLayout(id) {
+  let snap;
+  try {
+    snap = JSON.parse(localStorage.getItem(`layouts:data:${id}`));
+  } catch (err) {
+    snap = null;
+  }
+  if (!snap) return;
+
+  LAYOUT_STATE_KEYS.forEach((k) => {
+    const v = snap[k];
+    try {
+      if (v == null) localStorage.removeItem(k);
+      else localStorage.setItem(k, v);
+    } catch (err) {
+      /* localStorage unavailable */
+    }
+  });
+  try {
+    localStorage.setItem(LAYOUTS_ACTIVE_KEY, id);
+  } catch (err) {
+    /* localStorage unavailable */
+  }
+  location.reload();
+}
+
+function deleteLayout(id) {
+  saveLayoutList(getLayoutList().filter((l) => l.id !== id));
+  try {
+    localStorage.removeItem(`layouts:data:${id}`);
+    if (getActiveLayoutId() === id) localStorage.removeItem(LAYOUTS_ACTIVE_KEY);
+  } catch (err) {
+    /* localStorage unavailable */
+  }
+  renderLayoutTabs();
+}
+
+function renderLayoutTabs() {
+  const tabsEl = document.getElementById('layouts-tabs');
+  if (!tabsEl) return;
+  const list = getLayoutList();
+  const active = getActiveLayoutId();
+
+  tabsEl.innerHTML = '';
+  list.forEach((l) => {
+    const tab = document.createElement('span');
+    tab.className = 'layout-tab' + (l.id === active ? ' active' : '');
+    tab.innerHTML = `
+      <button class="layout-tab-name" type="button">${escapeHtml(l.name)}</button>
+      <button class="layout-tab-remove" type="button" title="Delete layout">✕</button>
+    `;
+    tab.querySelector('.layout-tab-name').addEventListener('click', () => switchToLayout(l.id));
+    tab.querySelector('.layout-tab-remove').addEventListener('click', (e) => {
+      e.stopPropagation();
+      if (confirm(`Delete the "${l.name}" layout? This can't be undone.`)) deleteLayout(l.id);
+    });
+    tabsEl.appendChild(tab);
+  });
+}
+
+renderLayoutTabs();
+const layoutsSaveBtn = document.getElementById('layouts-save-btn');
+if (layoutsSaveBtn) {
+  layoutsSaveBtn.addEventListener('click', () => {
+    const name = prompt('Name this layout:', `Layout ${getLayoutList().length + 1}`);
+    if (name && name.trim()) saveCurrentAsLayout(name.trim());
+  });
+}
+
 // ---------- Market news ticker ----------
 // One headline shown at a time, rolling to the next on the SAME 20s cycle as
 // refreshAll() (not a separate timer) so it's synced with the market/FX pulse.
@@ -1287,6 +1465,9 @@ async function init() {
     // saved-order panels to the end in sequence, which would otherwise
     // shuffle it out of trailing position, so re-pin it after.
     const dashboardPanels = document.getElementById('dashboard-panels');
+    [...dashboardPanels.querySelectorAll('.dashboard-panel[data-sort-id]')].forEach((p) => {
+      if (!p.dataset.livetvTile) initPanelWidthToggle(p, true); // core panels default to full width
+    });
     applySavedOrder(dashboardPanels, sortKeyFor(dashboardPanels));
     if (addLiveTvBtn) dashboardPanels.appendChild(addLiveTvBtn);
     makeSortable(dashboardPanels, sortKeyFor(dashboardPanels), {
