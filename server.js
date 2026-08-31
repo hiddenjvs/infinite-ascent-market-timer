@@ -1,6 +1,7 @@
 const express = require('express');
 const path = require('path');
 const fs = require('fs');
+const { XMLParser } = require('fast-xml-parser');
 const markets = require('./data/markets.json');
 const fxCurrencies = require('./data/fx.json');
 
@@ -41,6 +42,62 @@ app.get('/api/markets', (req, res) => {
 
 app.get('/api/fx', (req, res) => {
   res.json(fxCurrencies);
+});
+
+// Finance/econ headline ticker — no free public RSS survives from Reuters or
+// AP anymore (both retired syndication years ago; confirmed dead ends), so
+// this pulls from CNBC Business News and WSJ Markets (via Dow Jones' feed
+// infrastructure, which also serves MarketWatch) — same tier of source.
+const NEWS_FEEDS = [
+  { url: 'https://www.cnbc.com/id/10001147/device/rss/rss.html', source: 'CNBC' },
+  { url: 'https://feeds.content.dowjones.io/public/rss/RSSMarketsMain', source: 'WSJ Markets' }
+];
+const NEWS_CACHE_TTL_MS = 3 * 60 * 1000;
+const xmlParser = new XMLParser({ ignoreAttributes: true, htmlEntities: true });
+let newsCache = null;
+
+async function fetchNewsFeed(feed) {
+  const r = await fetch(feed.url, { headers: YF_HEADERS });
+  if (!r.ok) throw new Error(`${feed.source} responded ${r.status}`);
+  const xml = await r.text();
+  const items = xmlParser.parse(xml)?.rss?.channel?.item;
+  const list = Array.isArray(items) ? items : items ? [items] : [];
+  return list
+    .map((item) => ({
+      headline: typeof item.title === 'string' ? item.title.trim() : '',
+      link: typeof item.link === 'string' ? item.link : null,
+      pubDate: item.pubDate ? Date.parse(item.pubDate) || null : null,
+      source: feed.source
+    }))
+    .filter((n) => n.headline);
+}
+
+app.get('/api/news', async (req, res) => {
+  if (newsCache && Date.now() - newsCache.at < NEWS_CACHE_TTL_MS) {
+    return res.json(newsCache.data);
+  }
+
+  const results = await Promise.allSettled(NEWS_FEEDS.map(fetchNewsFeed));
+  const items = results.filter((r) => r.status === 'fulfilled').flatMap((r) => r.value);
+
+  if (items.length === 0) {
+    if (newsCache) return res.json(newsCache.data);
+    return res.status(502).json({ error: 'No news feeds reachable' });
+  }
+
+  items.sort((a, b) => (b.pubDate ?? 0) - (a.pubDate ?? 0));
+  const seen = new Set();
+  const deduped = [];
+  for (const item of items) {
+    const key = item.headline.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    deduped.push(item);
+    if (deduped.length >= 24) break;
+  }
+
+  newsCache = { at: Date.now(), data: deduped };
+  res.json(deduped);
 });
 
 app.get('/api/chart/:symbol', async (req, res) => {

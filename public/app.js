@@ -596,8 +596,68 @@ async function refreshAll() {
   pulseLogo();
 }
 
+// ---------- Market news ticker ----------
+
+let newsHeadlines = [];
+
+function escapeHtml(str) {
+  return str.replace(/[&<>"']/g, (c) => ({
+    '&': '&amp;',
+    '<': '&lt;',
+    '>': '&gt;',
+    '"': '&quot;',
+    "'": '&#39;'
+  })[c]);
+}
+
+function renderNewsTicker() {
+  const track = document.getElementById('news-ticker-track');
+  if (!track) return;
+
+  if (!newsHeadlines.length) {
+    track.innerHTML = '<span class="news-ticker-item">Headlines unavailable</span>';
+    return;
+  }
+
+  const itemsHtml = newsHeadlines
+    .map((n) => {
+      const inner = `<span class="source">${escapeHtml(n.source)}</span>${escapeHtml(n.headline)}`;
+      return n.link
+        ? `<a class="news-ticker-item" href="${n.link}" target="_blank" rel="noopener noreferrer">${inner}</a>`
+        : `<span class="news-ticker-item">${inner}</span>`;
+    })
+    .join('<span class="sep">•</span>');
+
+  // Duplicated back-to-back so the translateX(-50%) loop is seamless.
+  track.innerHTML = itemsHtml + itemsHtml;
+
+  // Constant scroll speed regardless of how much text loaded.
+  requestAnimationFrame(() => {
+    const halfWidth = track.scrollWidth / 2;
+    const pxPerSecond = 55;
+    const duration = Math.max(20, halfWidth / pxPerSecond);
+    track.style.setProperty('--ticker-duration', `${duration}s`);
+  });
+}
+
+async function loadNews() {
+  const dot = document.querySelector('[data-role="news-live-dot"]');
+  try {
+    const res = await fetch('/api/news');
+    const data = await res.json();
+    if (!Array.isArray(data) || data.length === 0) throw new Error('empty');
+    newsHeadlines = data;
+    if (dot) dot.className = 'live-dot ok';
+  } catch (err) {
+    if (dot) dot.className = 'live-dot down';
+  }
+  renderNewsTicker();
+}
+
 async function init() {
   initFx();
+  loadNews();
+  setInterval(loadNews, 3 * 60 * 1000); // backend caches the feeds for 3 min too
   const main = document.getElementById('markets-main');
   try {
     const markets = window.__BOOTSTRAP__.markets;

@@ -27,7 +27,11 @@ Then open **http://localhost:4173**.
   use TradingView's free `lightweight-charts` library (via CDN) — drag to
   pan, scroll/pinch to zoom the time axis, and hover to read the exact price
   at any point on the curve. Range buttons (1D/5D/1M/6M/1Y) refetch at an
-  appropriate granularity. Prices and charts auto-refresh every 60s.
+  appropriate granularity. Prices and charts auto-refresh every 20s.
+- `/api/news` — a scrolling headline ticker in the header, pulled from CNBC
+  Business News and WSJ Markets (via Dow Jones' free public RSS feeds;
+  Reuters and AP no longer offer free public RSS). Cached server-side for
+  3 minutes and refetched by the frontend on the same cadence.
 
 ## Markets covered
 

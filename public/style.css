@@ -78,16 +78,109 @@ body {
 /* ---------- Header ---------- */
 
 .page-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 18px 28px;
-  border-bottom: 1px solid var(--hairline-soft);
   position: sticky;
   top: 0;
   background: rgba(0, 0, 0, 0.55);
   backdrop-filter: var(--blur-lg);
   z-index: 10;
+  border-bottom: 1px solid var(--hairline-soft);
+}
+
+.header-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 18px 28px 14px;
+}
+
+/* ---------- News ticker ---------- */
+
+.news-ticker {
+  display: flex;
+  align-items: stretch;
+  border-top: 1px solid var(--hairline-soft);
+  height: 30px;
+  overflow: hidden;
+}
+
+.news-ticker-label {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 14px;
+  background: rgba(255, 159, 10, 0.1);
+  border-right: 1px solid var(--hairline-soft);
+  font-family: var(--mono);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  color: var(--amber);
+  white-space: nowrap;
+}
+
+.news-ticker-viewport {
+  position: relative;
+  flex: 1;
+  overflow: hidden;
+  min-width: 0;
+}
+
+.news-ticker-track {
+  position: absolute;
+  top: 0;
+  left: 0;
+  display: flex;
+  align-items: center;
+  height: 100%;
+  white-space: nowrap;
+  will-change: transform;
+  animation: ticker-scroll linear infinite;
+  animation-duration: var(--ticker-duration, 60s);
+}
+
+.news-ticker-track:hover {
+  animation-play-state: paused;
+}
+
+@keyframes ticker-scroll {
+  from { transform: translateX(0); }
+  to { transform: translateX(-50%); }
+}
+
+.news-ticker-item {
+  display: inline-flex;
+  align-items: center;
+  padding: 0 22px;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--text-dim);
+  text-decoration: none;
+}
+
+a.news-ticker-item:hover {
+  color: var(--text);
+}
+
+.news-ticker-item .source {
+  color: var(--text-faint);
+  margin-right: 8px;
+  font-weight: 700;
+}
+
+.news-ticker-item .sep {
+  color: var(--hairline);
+  margin-left: 22px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .news-ticker-track {
+    animation: none;
+    position: static;
+    flex-wrap: wrap;
+    height: auto;
+  }
+  .news-ticker-viewport { overflow-x: auto; }
 }
 
 .brand {

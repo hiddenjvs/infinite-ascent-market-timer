@@ -11,25 +11,37 @@
 </head>
 <body>
   <header class="page-header">
-    <div class="brand">
-      <div class="brand-top">
-        <img class="brand-logo" src="assets/logo.png" alt="Infinite Ascent" width="410" height="144" />
-        <span class="brand-sub">Market Timer</span>
+    <div class="header-top">
+      <div class="brand">
+        <div class="brand-top">
+          <img class="brand-logo" src="assets/logo.png" alt="Infinite Ascent" width="410" height="144" />
+          <span class="brand-sub">Market Timer</span>
+        </div>
+        <div class="api-status">
+          <span class="api-chip">
+            <span class="api-dot" data-role="markets-dot"></span>MARKETS API
+            <span class="api-state" data-role="markets-state">connecting…</span>
+          </span>
+          <span class="api-chip">
+            <span class="api-dot" data-role="fx-dot"></span>FX API
+            <span class="api-state" data-role="fx-state">connecting…</span>
+          </span>
+        </div>
       </div>
-      <div class="api-status">
-        <span class="api-chip">
-          <span class="api-dot" data-role="markets-dot"></span>MARKETS API
-          <span class="api-state" data-role="markets-state">connecting…</span>
-        </span>
-        <span class="api-chip">
-          <span class="api-dot" data-role="fx-dot"></span>FX API
-          <span class="api-state" data-role="fx-state">connecting…</span>
-        </span>
+      <div class="local-clock">
+        <span id="local-time">--:--:--</span>
+        <span id="local-tz" class="local-tz"></span>
       </div>
     </div>
-    <div class="local-clock">
-      <span id="local-time">--:--:--</span>
-      <span id="local-tz" class="local-tz"></span>
+    <div class="news-ticker">
+      <span class="news-ticker-label">
+        <span class="live-dot" data-role="news-live-dot"></span>MARKET NEWS
+      </span>
+      <div class="news-ticker-viewport">
+        <div class="news-ticker-track" id="news-ticker-track">
+          <span class="news-ticker-item">Loading headlines…</span>
+        </div>
+      </div>
     </div>
   </header>
 
