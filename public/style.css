@@ -527,7 +527,7 @@ a.headline-text:hover {
   display: flex;
   flex-wrap: wrap;
   justify-content: flex-end;
-  gap: 3px;
+  gap: 4px 5px;
 }
 
 .range-btn {
@@ -536,7 +536,7 @@ a.headline-text:hover {
   color: var(--text-dim);
   font-size: 10px;
   font-weight: 600;
-  padding: 1px 5px;
+  padding: 4px 7px;
   border-radius: 999px;
   cursor: pointer;
   transition: transform 100ms var(--ease-press), background-color 150ms var(--ease-spring),
@@ -1154,4 +1154,16 @@ a.headline-text:hover {
 
 @media (prefers-reduced-motion: reduce) {
   .modal-box { animation: none; }
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
 }

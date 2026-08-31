@@ -182,7 +182,9 @@ const RANGES = [
   { key: '5D', range: '5d', interval: '15m' },
   { key: '1M', range: '1mo', interval: '60m' },
   { key: '6M', range: '6mo', interval: '1d' },
-  { key: '1Y', range: '1y', interval: '1d' }
+  { key: 'YTD', range: 'ytd', interval: '1d' },
+  { key: '1Y', range: '1y', interval: '1d' },
+  { key: 'All', range: 'max', interval: '1mo' }
 ];
 
 function formatPrice(price, currency) {
@@ -207,7 +209,18 @@ function createPriceChart(container) {
       horzLines: { color: 'rgba(255,255,255,0.04)' }
     },
     rightPriceScale: { borderVisible: false },
-    timeScale: { borderVisible: false, timeVisible: true, secondsVisible: false },
+    timeScale: {
+      borderVisible: false,
+      timeVisible: true,
+      secondsVisible: false,
+      // Without these, zooming/panning past the actual data just shrinks it
+      // into a smaller slice of the canvas with empty space on either side —
+      // clamp both edges to the real data range and cap how far bars can
+      // shrink so "zoomed all the way out" still shows a full chart.
+      fixLeftEdge: true,
+      fixRightEdge: true,
+      minBarSpacing: 4
+    },
     crosshair: { mode: LightweightCharts.CrosshairMode.Normal },
     handleScroll: true,
     handleScale: true
@@ -606,16 +619,17 @@ function buildFxMatrix(currencies) {
   const thead = document.createElement('thead');
   const headRow = document.createElement('tr');
   headRow.innerHTML =
-    '<th class="fx-corner"></th>' +
-    currencies.map((c) => `<th>${CCY_FLAGS[c.code] || ''} ${c.code}</th>`).join('');
+    '<th class="fx-corner" scope="col"><span class="sr-only">Row currency</span></th>' +
+    currencies.map((c) => `<th scope="col">${CCY_FLAGS[c.code] || ''} ${c.code}</th>`).join('');
   thead.appendChild(headRow);
   table.appendChild(thead);
 
   const tbody = document.createElement('tbody');
   currencies.forEach((rowCcy) => {
     const tr = document.createElement('tr');
-    const rowHead = document.createElement('td');
+    const rowHead = document.createElement('th');
     rowHead.className = 'fx-row-head';
+    rowHead.scope = 'row';
     rowHead.textContent = `${CCY_FLAGS[rowCcy.code] || ''} ${rowCcy.code}`;
     tr.appendChild(rowHead);
 
