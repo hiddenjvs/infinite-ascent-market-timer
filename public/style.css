@@ -97,7 +97,7 @@ body {
 
 .brand-logo {
   display: block;
-  height: 30px;
+  height: 48px;
   width: auto;
 }
 
@@ -415,7 +415,6 @@ body {
 
 .fx-section {
   padding: 12px 24px 32px;
-  max-width: 900px;
 }
 
 .fx-bar {
@@ -477,13 +476,22 @@ body {
   border-collapse: collapse;
   font-family: var(--mono);
   font-size: 10.5px;
+  width: 100%;
+  table-layout: fixed;
+}
+
+.fx-matrix .fx-corner,
+.fx-matrix .fx-row-head {
+  width: 9%;
 }
 
 .fx-matrix th,
 .fx-matrix td {
-  padding: 4px 8px;
+  padding: 4px 6px;
   text-align: right;
   white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
   border-bottom: 1px solid var(--hairline-soft);
   border-left: 1px solid var(--hairline-soft);
 }
@@ -549,5 +557,4 @@ body {
   padding: 18px 28px 40px;
   color: var(--text-faint);
   font-size: 11.5px;
-  max-width: 900px;
 }
