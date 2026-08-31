@@ -774,8 +774,19 @@ a.headline-text:hover {
 }
 
 #dashboard-panels {
-  display: flex;
-  flex-direction: column;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(380px, 1fr));
+  gap: 10px;
+  align-items: start;
+  padding: 0 6px;
+}
+
+/* The big data panels (Markets/Commodities/Watchlist/FX) default to full
+   width; compact tile-style panels (Live TV) don't, so several can sit
+   side by side in the same row — drag any panel to reposition it in the
+   matrix, order is what's saved. */
+.dashboard-panel.panel-wide {
+  grid-column: 1 / -1;
 }
 
 .dashboard-panel {
@@ -1233,4 +1244,50 @@ a.headline-text:hover {
   max-width: 640px;
   font-size: 10.5px;
   color: var(--text-faint);
+  min-height: 12px;
+}
+
+.livetv-frame-wrap { max-width: none; }
+
+/* "+" ghost tile — always the trailing item in the matrix, click to add
+   another Live TV tile. */
+.add-panel-tile {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 120px;
+  background: transparent;
+  border: 1.5px dashed var(--hairline);
+  border-radius: var(--radius-lg);
+  color: var(--text-faint);
+  font-family: var(--mono);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  cursor: pointer;
+  transition: border-color 150ms var(--ease-spring), color 150ms var(--ease-spring),
+    background-color 150ms var(--ease-spring);
+}
+
+.add-panel-tile:hover {
+  border-color: var(--accent);
+  color: var(--text);
+  background: rgba(10, 132, 255, 0.06);
+}
+
+.add-panel-plus {
+  font-size: 22px;
+  font-weight: 400;
+  line-height: 1;
+}
+
+.panel-drag-handle.has-remove {
+  width: auto;
+  justify-content: space-between;
+}
+
+.panel-drag-handle .instrument-remove {
+  margin-left: 6px;
 }

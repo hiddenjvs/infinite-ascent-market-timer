@@ -533,12 +533,12 @@ function applySavedOrder(container, storageKey) {
   });
 }
 
-function makeSortable(container, storageKey, { handleSelector } = {}) {
+function makeSortable(container, storageKey, { handleSelector, afterReorder } = {}) {
   let dragEl = null;
   const draggingClass = container.id === 'dashboard-panels' ? 'panel-dragging' : 'item-dragging';
 
   function itemsExcept(el) {
-    return [...container.children].filter((c) => c !== el);
+    return [...container.children].filter((c) => c !== el && c.dataset.sortId);
   }
 
   function closestItem(x, y) {
@@ -578,14 +578,21 @@ function makeSortable(container, storageKey, { handleSelector } = {}) {
     const target = closestItem(e.clientX, e.clientY);
     if (!target || target === dragEl) return;
     const r = target.getBoundingClientRect();
-    const before = e.clientY < r.top + r.height / 2;
-    container.insertBefore(dragEl, before ? target : target.nextSibling);
+    // 2D-aware insert direction — for a genuine matrix (multiple items per
+    // row) the old "always compare Y" approach breaks down when reordering
+    // left/right within the same row. Use whichever axis the pointer is
+    // more offset along, relative to the target's center.
+    const dx = e.clientX - (r.left + r.width / 2);
+    const dy = e.clientY - (r.top + r.height / 2);
+    const insertAfter = Math.abs(dx) > Math.abs(dy) ? dx > 0 : dy > 0;
+    container.insertBefore(dragEl, insertAfter ? target.nextSibling : target);
   });
 
   container.addEventListener('dragend', () => {
     if (!dragEl) return;
     dragEl.classList.remove(draggingClass);
     dragEl = null;
+    if (afterReorder) afterReorder();
     persistOrder(container, storageKey);
   });
 }
@@ -900,76 +907,115 @@ function initWatchlistSearch() {
   });
 }
 
-// ---------- Live TV ----------
-// Official YouTube live streams, embedded via the `live_stream?channel=`
-// pattern — this tracks whatever is CURRENTLY live on that channel rather
-// than a hardcoded video id, so it doesn't go stale when a stream ends and
-// a new one starts. Not scraping or bypassing anything — this is YouTube's
-// own sanctioned embed API. Bloomberg/NBC/CNBC/Sky News all run legitimate
-// free 24/7 live news streams this way; CNN doesn't (their live feed is
-// paywalled), which is why it's not in this list.
+// ---------- Live TV (multi-tile) ----------
+// Official YouTube live streams. Each tile resolves its channel's CURRENTLY
+// live video id server-side (via /api/livetv/:channel) and embeds that
+// specific video through the standard /embed/VIDEO_ID pattern — the
+// live_stream?channel= parameter form was tried first but turned out to
+// work for some channels (Bloomberg, CNBC) and not others (NBC, Sky) for
+// undocumented reasons. Not scraping or bypassing anything — this is
+// YouTube's own sanctioned embed API. CNN isn't in the list because their
+// live feed is paywalled; no free public stream exists.
+//
+// Any number of tiles can exist side by side (a real matrix, not a single
+// switcher) — click the "+" ghost tile to add one, the × on a tile's handle
+// to remove it. The set of tiles + each one's selected source persists to
+// localStorage; panel POSITION persists separately via the normal
+// dashboard-panels sortable (sortKeyFor/applySavedOrder), same as every
+// other panel.
 const LIVETV_SOURCES = [
   { id: 'bloomberg', label: 'Bloomberg TV', channel: 'UCIALMKvObZNtJ6AmdCLP7Lg' },
   { id: 'nbc', label: 'NBC News NOW', channel: 'UCeY0bbntWzzVIaj2z3QigXg' },
   { id: 'cnbc', label: 'CNBC', channel: 'UCvJJ_dzjViJCoLf5uKUTwoA' },
   { id: 'sky', label: 'Sky News', channel: 'UCoMdktPbSTixAyNGwb-UYkQ' }
 ];
-const LIVETV_KEY = 'livetv:source';
+const LIVETV_TILES_KEY = 'livetv:tiles';
 
-let liveTvCurrentId = null;
-let liveTvCurrentVideoId = null;
-let liveTvRefreshTimer = null;
-
-function initLiveTv() {
-  const tabsEl = document.getElementById('livetv-tabs');
-  const frame = document.getElementById('livetv-frame');
-  const noteEl = document.querySelector('.livetv-note');
-  if (!tabsEl || !frame) return;
-
-  let saved;
+function getLiveTvTiles() {
   try {
-    saved = localStorage.getItem(LIVETV_KEY);
+    const list = JSON.parse(localStorage.getItem(LIVETV_TILES_KEY));
+    if (Array.isArray(list) && list.length) return list;
   } catch (err) {
-    saved = null;
+    /* fall through to default */
   }
+  return [{ id: 'livetv-1', sourceId: LIVETV_SOURCES[0].id }];
+}
 
-  async function setSource(id) {
-    const src = LIVETV_SOURCES.find((s) => s.id === id) || LIVETV_SOURCES[0];
-    liveTvCurrentId = src.id;
-    [...tabsEl.children].forEach((b) => b.classList.toggle('active', b.dataset.id === src.id));
-    try {
-      localStorage.setItem(LIVETV_KEY, src.id);
-    } catch (err) {
-      /* localStorage unavailable — selection just won't persist */
-    }
-    liveTvCurrentVideoId = null; // force the embed to (re)load below
-    await refreshLiveVideo();
-
-    clearInterval(liveTvRefreshTimer);
-    liveTvRefreshTimer = setInterval(refreshLiveVideo, 5 * 60 * 1000);
+function saveLiveTvTiles() {
+  const tiles = [...document.querySelectorAll('.dashboard-panel[data-livetv-tile]')].map((p) => ({
+    id: p.dataset.sortId,
+    sourceId: p.dataset.currentSource || LIVETV_SOURCES[0].id
+  }));
+  try {
+    localStorage.setItem(LIVETV_TILES_KEY, JSON.stringify(tiles));
+  } catch (err) {
+    /* localStorage unavailable — tile set just won't persist */
   }
+}
 
-  // Resolves the channel's current live video id server-side (the id itself
-  // changes whenever a broadcast ends and the next one begins) and only
-  // touches the iframe if it's actually different, so a periodic refresh
-  // doesn't interrupt playback that's already running fine.
+function buildLiveTvPanel(tileId, initialSourceId) {
+  const section = document.createElement('section');
+  section.className = 'dashboard-panel';
+  section.dataset.sortId = tileId;
+  section.dataset.livetvTile = 'true';
+  section.dataset.currentSource = initialSourceId;
+  section.innerHTML = `
+    <div class="panel-drag-handle has-remove" draggable="true">
+      <span><span class="grip">⠿</span> LIVE TV</span>
+      <button class="instrument-remove" type="button" data-role="remove" title="Remove this tile">✕</button>
+    </div>
+    <div class="livetv-main">
+      <div class="livetv-tabs" data-role="tabs"></div>
+      <div class="livetv-frame-wrap">
+        <iframe
+          class="livetv-frame"
+          data-role="frame"
+          src=""
+          title="Live news stream"
+          allow="autoplay; encrypted-media; picture-in-picture"
+          allowfullscreen
+          frameborder="0"
+        ></iframe>
+      </div>
+      <p class="livetv-note" data-role="note"></p>
+    </div>
+  `;
+
+  const tabsEl = section.querySelector('[data-role="tabs"]');
+  const frame = section.querySelector('[data-role="frame"]');
+  const noteEl = section.querySelector('[data-role="note"]');
+  let currentVideoId = null;
+  let refreshTimer = null;
+
   async function refreshLiveVideo() {
-    const src = LIVETV_SOURCES.find((s) => s.id === liveTvCurrentId);
+    const src = LIVETV_SOURCES.find((s) => s.id === section.dataset.currentSource);
     if (!src) return;
     try {
       const res = await fetch(`/api/livetv/${encodeURIComponent(src.channel)}`);
       const data = await res.json();
       if (!data.videoId) throw new Error(data.error || 'no live video');
-      if (data.videoId !== liveTvCurrentVideoId) {
-        liveTvCurrentVideoId = data.videoId;
+      if (data.videoId !== currentVideoId) {
+        currentVideoId = data.videoId;
         frame.src = `https://www.youtube-nocookie.com/embed/${data.videoId}?autoplay=1&mute=1`;
       }
-      if (noteEl) noteEl.textContent = '';
+      noteEl.textContent = '';
     } catch (err) {
-      if (noteEl && liveTvCurrentId === src.id) {
+      if (section.dataset.currentSource === src.id) {
         noteEl.textContent = `${src.label} doesn't appear to be broadcasting live right now.`;
       }
     }
+  }
+
+  function setSource(id) {
+    const src = LIVETV_SOURCES.find((s) => s.id === id) || LIVETV_SOURCES[0];
+    section.dataset.currentSource = src.id;
+    [...tabsEl.children].forEach((b) => b.classList.toggle('active', b.dataset.id === src.id));
+    currentVideoId = null; // force the embed to (re)load
+    refreshLiveVideo();
+    saveLiveTvTiles();
+
+    clearInterval(refreshTimer);
+    refreshTimer = setInterval(refreshLiveVideo, 5 * 60 * 1000);
   }
 
   LIVETV_SOURCES.forEach((s) => {
@@ -982,7 +1028,37 @@ function initLiveTv() {
     tabsEl.appendChild(btn);
   });
 
-  setSource(LIVETV_SOURCES.some((s) => s.id === saved) ? saved : LIVETV_SOURCES[0].id);
+  section.querySelector('[data-role="remove"]').addEventListener('click', (e) => {
+    e.stopPropagation();
+    clearInterval(refreshTimer);
+    section.remove();
+    saveLiveTvTiles();
+  });
+
+  setSource(initialSourceId);
+  return section;
+}
+
+function initLiveTv() {
+  const dashboardPanels = document.getElementById('dashboard-panels');
+  if (!dashboardPanels) return null;
+
+  getLiveTvTiles().forEach((tile) => {
+    dashboardPanels.appendChild(buildLiveTvPanel(tile.id, tile.sourceId));
+  });
+
+  const addBtn = document.createElement('button');
+  addBtn.type = 'button';
+  addBtn.className = 'dashboard-panel add-panel-tile';
+  addBtn.innerHTML = '<span class="add-panel-plus">+</span><span>Add Live TV</span>';
+  addBtn.addEventListener('click', () => {
+    const newTile = buildLiveTvPanel(`livetv-${Date.now()}`, LIVETV_SOURCES[0].id);
+    dashboardPanels.insertBefore(newTile, addBtn);
+    saveLiveTvTiles();
+  });
+  dashboardPanels.appendChild(addBtn);
+
+  return addBtn;
 }
 
 // ---------- Detail modal (double-click any instrument tile) ----------
@@ -1204,12 +1280,19 @@ async function init() {
     initCommodities();
     initWatchlist();
     initWatchlistSearch();
-    initLiveTv();
+    const addLiveTvBtn = initLiveTv();
 
-    // Dashboard-level reordering (drag a panel by its grip handle).
+    // Dashboard-level reordering (drag a panel by its grip handle). The
+    // "+" add-tile ghost must always stay last — applySavedOrder moves
+    // saved-order panels to the end in sequence, which would otherwise
+    // shuffle it out of trailing position, so re-pin it after.
     const dashboardPanels = document.getElementById('dashboard-panels');
     applySavedOrder(dashboardPanels, sortKeyFor(dashboardPanels));
-    makeSortable(dashboardPanels, sortKeyFor(dashboardPanels), { handleSelector: '.panel-drag-handle' });
+    if (addLiveTvBtn) dashboardPanels.appendChild(addLiveTvBtn);
+    makeSortable(dashboardPanels, sortKeyFor(dashboardPanels), {
+      handleSelector: '.panel-drag-handle',
+      afterReorder: () => addLiveTvBtn && dashboardPanels.appendChild(addLiveTvBtn)
+    });
 
     // Refresh live prices/charts/FX as often as the free API comfortably allows
     // (backend caches responses for ~20s, so this stays close to real-time).

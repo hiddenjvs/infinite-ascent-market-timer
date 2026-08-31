@@ -48,21 +48,21 @@
   <p class="reorg-hint">Drag a panel by its <span class="grip">⠿</span> handle to reorganize your dashboard — layout is saved locally.</p>
 
   <div id="dashboard-panels">
-    <section class="dashboard-panel" data-sort-id="markets">
+    <section class="dashboard-panel panel-wide" data-sort-id="markets">
       <div class="panel-drag-handle" draggable="true"><span class="grip">⠿</span> MARKETS</div>
       <main id="markets-main" class="markets-main">
         <p class="loading">Loading market data…</p>
       </main>
     </section>
 
-    <section class="dashboard-panel" data-sort-id="commodities">
+    <section class="dashboard-panel panel-wide" data-sort-id="commodities">
       <div class="panel-drag-handle" draggable="true"><span class="grip">⠿</span> COMMODITIES</div>
       <div class="commodities-main">
         <div class="commodities-grid" id="commodities-grid"></div>
       </div>
     </section>
 
-    <section class="dashboard-panel" data-sort-id="watchlist">
+    <section class="dashboard-panel panel-wide" data-sort-id="watchlist">
       <div class="panel-drag-handle" draggable="true"><span class="grip">⠿</span> WATCHLIST</div>
       <div class="watchlist-main">
         <div class="watchlist-search">
@@ -79,29 +79,7 @@
       </div>
     </section>
 
-    <section class="dashboard-panel" data-sort-id="livetv">
-      <div class="panel-drag-handle" draggable="true"><span class="grip">⠿</span> LIVE TV</div>
-      <div class="livetv-main">
-        <div class="livetv-tabs" id="livetv-tabs"></div>
-        <div class="livetv-frame-wrap">
-          <iframe
-            id="livetv-frame"
-            class="livetv-frame"
-            src=""
-            title="Live news stream"
-            allow="autoplay; encrypted-media; picture-in-picture"
-            allowfullscreen
-            frameborder="0"
-          ></iframe>
-        </div>
-        <p class="livetv-note">
-          Official YouTube live streams from each network. If a feed shows nothing, that network
-          isn't currently broadcasting live.
-        </p>
-      </div>
-    </section>
-
-    <section class="dashboard-panel" data-sort-id="fx">
+    <section class="dashboard-panel panel-wide" data-sort-id="fx">
       <div class="panel-drag-handle" draggable="true"><span class="grip">⠿</span> FX</div>
       <div class="fx-section">
         <div class="fx-bar">
