@@ -365,6 +365,7 @@ a.headline-text:hover {
 /* ---------- Market card (structural material — heavier blur) ---------- */
 
 .market-card {
+  position: relative;
   background: var(--surface-1);
   backdrop-filter: var(--blur-lg);
   border: 1px solid var(--hairline);
@@ -383,6 +384,13 @@ a.headline-text:hover {
   transform: translateY(-2px);
   border-color: rgba(255, 255, 255, 0.16);
   box-shadow: 0 1px 1px rgba(0, 0, 0, 0.4), 0 20px 36px -16px rgba(0, 0, 0, 0.75);
+}
+
+.market-card-remove {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  z-index: 2;
 }
 
 .market-card-head {
@@ -878,6 +886,24 @@ a.headline-text:hover {
   gap: 10px;
   align-items: start;
   padding: 0 6px;
+}
+
+/* A panel only enters this mode once the user drags its handle vertically —
+   until then it's plain auto height (natural content size, no scrollbar),
+   exactly like before resize existed. Height is a literal pixel value set
+   directly on the panel (not grid-row span) — deliberately not routed
+   through CSS Grid's row-track sizing, which has surprising interactions
+   with the automatic minimum size of unspanned items in the same grid. */
+.dashboard-panel.resizable-height {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.dashboard-panel.resizable-height .panel-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
 }
 
 .dashboard-panel {

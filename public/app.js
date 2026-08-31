@@ -408,11 +408,12 @@ const panels = [];
 const statusEls = [];
 let openGrid, closedGrid, openCountEl, closedCountEl;
 
-function buildMarketCard(market) {
+function buildMarketCard(market, removable) {
   const card = document.createElement('div');
   card.className = 'market-card sortable-item';
   card.dataset.sortId = market.id;
   card.innerHTML = `
+    ${removable ? '<button class="instrument-remove market-card-remove" type="button" title="Remove this market" data-role="remove-market">✕</button>' : ''}
     <div class="market-card-head" draggable="true">
       <div class="market-title">
         <span class="market-flag">${market.flag}</span>
@@ -440,6 +441,13 @@ function buildMarketCard(market) {
     countdownLabel: card.querySelector('[data-role="countdown-label"]')
   };
   statusEls.push(entry);
+
+  if (removable) {
+    card.querySelector('[data-role="remove-market"]').addEventListener('click', (e) => {
+      e.stopPropagation();
+      removeExtraMarket(market.id);
+    });
+  }
 
   return entry;
 }
@@ -598,13 +606,19 @@ function makeSortable(container, storageKey, { handleSelector, afterReorder } = 
 }
 
 // ---------- Panel resize (generic — works the same on every panel type) ----------
-// #dashboard-panels is a fixed 12-column grid specifically so a column has a
-// well-defined pixel pitch to drag against. Every panel is a plain
-// container: dragging its corner handle changes its grid-column span
-// (2-12), independent of what's inside it. The span persists per panel id.
+// #dashboard-panels is a fixed 12-column grid so width has a well-defined
+// pixel pitch to drag against (grid-column span, 2-12). Height is a literal
+// pixel value set directly on the panel — deliberately NOT routed through
+// CSS Grid row-spans/grid-auto-rows, which has surprising automatic-minimum-
+// size interactions with panels that aren't spanning rows themselves. Height
+// stays natural/auto until the user drags vertically; once engaged, the
+// panel gets a fixed pixel height and its body becomes internally
+// scrollable rather than growing forever. Persists per panel id as
+// { col, height } (height null = still auto).
 const PANEL_SPAN_KEY = 'panelspan:state';
 const PANEL_SPAN_MIN = 2;
 const PANEL_SPAN_MAX = 12;
+const PANEL_HEIGHT_MIN = 120;
 
 function getPanelSpanState() {
   try {
@@ -615,7 +629,7 @@ function getPanelSpanState() {
   }
 }
 
-function setPanelSpan(id, span) {
+function setPanelSpanState(id, span) {
   const state = getPanelSpanState();
   state[id] = span;
   try {
@@ -625,46 +639,80 @@ function setPanelSpan(id, span) {
   }
 }
 
-function applyPanelSpan(panelEl, span) {
-  const clamped = Math.min(PANEL_SPAN_MAX, Math.max(PANEL_SPAN_MIN, span));
+function applyPanelCol(panelEl, col) {
+  const clamped = Math.min(PANEL_SPAN_MAX, Math.max(PANEL_SPAN_MIN, col));
   panelEl.style.gridColumn = `span ${clamped}`;
   return clamped;
 }
 
-function initResizeHandle(panelEl, defaultSpan) {
+function applyPanelHeight(panelEl, heightPx) {
+  if (heightPx == null) {
+    panelEl.classList.remove('resizable-height');
+    panelEl.style.height = '';
+    return null;
+  }
+  const clamped = Math.max(PANEL_HEIGHT_MIN, Math.round(heightPx));
+  panelEl.classList.add('resizable-height');
+  panelEl.style.height = `${clamped}px`;
+  return clamped;
+}
+
+function initResizeHandle(panelEl, defaultCol) {
   const id = panelEl.dataset.sortId;
   const state = getPanelSpanState();
-  applyPanelSpan(panelEl, Object.prototype.hasOwnProperty.call(state, id) ? state[id] : defaultSpan);
+  const saved = state[id];
+  applyPanelCol(panelEl, saved ? saved.col : defaultCol);
+  if (saved && saved.height) applyPanelHeight(panelEl, saved.height);
 
   const handle = document.createElement('div');
   handle.className = 'panel-resize-handle';
-  handle.title = 'Drag to resize';
+  handle.title = 'Drag to resize (double-click to reset height)';
   panelEl.appendChild(handle);
+
+  handle.addEventListener('dblclick', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    applyPanelHeight(panelEl, null);
+    setPanelSpanState(id, {
+      col: parseInt(panelEl.style.gridColumn.replace('span ', ''), 10) || defaultCol,
+      height: null
+    });
+  });
 
   handle.addEventListener('pointerdown', (e) => {
     e.preventDefault();
     e.stopPropagation();
     const container = panelEl.parentElement;
     const startX = e.clientX;
-    const startSpan = parseInt(panelEl.style.gridColumn.replace('span ', ''), 10) || defaultSpan;
-    // Approximate column pitch (column width + gap) from the container's
-    // current pixel width — doesn't need to be pixel-perfect, just
-    // proportional, since the result snaps to whole columns anyway.
-    const pitch = container.getBoundingClientRect().width / PANEL_SPAN_MAX;
+    const startY = e.clientY;
+    const startCol = parseInt((panelEl.style.gridColumn || '').replace('span ', ''), 10) || defaultCol;
+    const startHeight = panelEl.getBoundingClientRect().height;
+    // Approximate column pitch (track size + gap) from live geometry —
+    // doesn't need to be pixel-perfect since the result snaps to whole
+    // columns anyway.
+    const colPitch = container.getBoundingClientRect().width / PANEL_SPAN_MAX;
+    let heightEngaged = panelEl.classList.contains('resizable-height');
+
     panelEl.classList.add('resizing');
     handle.setPointerCapture(e.pointerId);
 
     function onMove(ev) {
-      const deltaSpan = Math.round((ev.clientX - startX) / pitch);
-      applyPanelSpan(panelEl, startSpan + deltaSpan);
+      applyPanelCol(panelEl, startCol + Math.round((ev.clientX - startX) / colPitch));
+
+      const dy = ev.clientY - startY;
+      if (heightEngaged || Math.abs(dy) > 8) {
+        heightEngaged = true;
+        applyPanelHeight(panelEl, startHeight + dy);
+      }
     }
     function onUp() {
       handle.releasePointerCapture(e.pointerId);
       handle.removeEventListener('pointermove', onMove);
       handle.removeEventListener('pointerup', onUp);
       panelEl.classList.remove('resizing');
-      const finalSpan = parseInt(panelEl.style.gridColumn.replace('span ', ''), 10);
-      setPanelSpan(id, finalSpan);
+      const finalCol = parseInt((panelEl.style.gridColumn || '').replace('span ', ''), 10);
+      const finalHeight = heightEngaged ? panelEl.getBoundingClientRect().height : null;
+      setPanelSpanState(id, { col: finalCol, height: finalHeight });
     }
     handle.addEventListener('pointermove', onMove);
     handle.addEventListener('pointerup', onUp);
@@ -819,11 +867,14 @@ async function refreshAll() {
   pulseLogo();
 }
 
-// ---------- Commodities & Watchlist ----------
+// ---------- Commodities & Watchlist (generic ticker buckets) ----------
 // Both reuse IndexPanel for their live chart/price tile — a commodity or a
 // watchlist stock is just another Yahoo Finance symbol, same as an index.
 // Their panels are pushed into the shared `panels` array so refreshAll()
-// above picks them up automatically on the same 20s cycle.
+// above picks them up automatically on the same 20s cycle. Since the two
+// are functionally identical (a list of user-added tickers, each removable),
+// they're both instances of the same generic factory rather than separate
+// copies of the same logic.
 
 function buildInstrumentCard({ symbol, name, flag, removable }) {
   const card = document.createElement('div');
@@ -842,6 +893,72 @@ function buildInstrumentCard({ symbol, name, flag, removable }) {
   return { card, slot: card.querySelector('[data-role="slot"]') };
 }
 
+function createTickerBucket(storageKey, gridId) {
+  const panelsBySymbol = new Map();
+
+  function getList() {
+    try {
+      const list = JSON.parse(localStorage.getItem(storageKey));
+      return Array.isArray(list) ? list : [];
+    } catch (err) {
+      return [];
+    }
+  }
+
+  function saveList(list) {
+    try {
+      localStorage.setItem(storageKey, JSON.stringify(list));
+    } catch (err) {
+      /* localStorage unavailable — just won't persist across reloads */
+    }
+  }
+
+  function removeItem(symbol) {
+    saveList(getList().filter((x) => x.symbol !== symbol));
+    const panel = panelsBySymbol.get(symbol);
+    if (panel) {
+      const idx = panels.indexOf(panel);
+      if (idx !== -1) panels.splice(idx, 1);
+      panelsBySymbol.delete(symbol);
+      panel.destroy();
+    }
+    const grid = document.getElementById(gridId);
+    const card = [...grid.children].find((c) => c.dataset.sortId === symbol);
+    if (card) card.remove();
+  }
+
+  function renderItem(item) {
+    const grid = document.getElementById(gridId);
+    const { card, slot } = buildInstrumentCard({ symbol: item.symbol, name: item.name, flag: '📈', removable: true });
+    grid.appendChild(card);
+    const panel = new IndexPanel(slot, item.symbol, item.name);
+    panels.push(panel);
+    panelsBySymbol.set(item.symbol, panel);
+    panel.load();
+    card.querySelector('[data-role="remove"]').addEventListener('click', (e) => {
+      e.stopPropagation();
+      removeItem(item.symbol);
+    });
+  }
+
+  function addItem(item) {
+    const list = getList();
+    if (list.some((x) => x.symbol === item.symbol)) return;
+    list.push(item);
+    saveList(list);
+    renderItem(item);
+  }
+
+  function renderSaved() {
+    getList().forEach((item) => renderItem(item));
+  }
+
+  return { addItem, removeItem, renderSaved };
+}
+
+const watchlistBucket = createTickerBucket('watchlist:tickers', 'watchlist-grid');
+const commoditiesAddedBucket = createTickerBucket('commodities:added', 'commodities-grid');
+
 function initCommodities() {
   const grid = document.getElementById('commodities-grid');
   const commodities = (window.__BOOTSTRAP__ && window.__BOOTSTRAP__.commodities) || [];
@@ -851,80 +968,27 @@ function initCommodities() {
     const panel = new IndexPanel(slot, c.symbol, c.unit ? `${c.name} ${c.unit}` : c.name);
     panels.push(panel);
   });
+  commoditiesAddedBucket.renderSaved();
   applySavedOrder(grid, sortKeyFor(grid));
   makeSortable(grid, sortKeyFor(grid));
-}
-
-const WATCHLIST_KEY = 'watchlist:tickers';
-const watchlistPanelsBySymbol = new Map();
-
-function getWatchlist() {
-  try {
-    const list = JSON.parse(localStorage.getItem(WATCHLIST_KEY));
-    return Array.isArray(list) ? list : [];
-  } catch (err) {
-    return [];
-  }
-}
-
-function saveWatchlist(list) {
-  try {
-    localStorage.setItem(WATCHLIST_KEY, JSON.stringify(list));
-  } catch (err) {
-    /* localStorage unavailable — watchlist just won't persist across reloads */
-  }
-}
-
-function addToWatchlist(item) {
-  const list = getWatchlist();
-  if (list.some((x) => x.symbol === item.symbol)) return;
-  list.push(item);
-  saveWatchlist(list);
-  renderWatchlistItem(item);
-}
-
-function removeFromWatchlist(symbol) {
-  saveWatchlist(getWatchlist().filter((x) => x.symbol !== symbol));
-
-  const panel = watchlistPanelsBySymbol.get(symbol);
-  if (panel) {
-    const idx = panels.indexOf(panel);
-    if (idx !== -1) panels.splice(idx, 1);
-    watchlistPanelsBySymbol.delete(symbol);
-    panel.destroy();
-  }
-
-  const grid = document.getElementById('watchlist-grid');
-  const card = [...grid.children].find((c) => c.dataset.sortId === symbol);
-  if (card) card.remove();
-}
-
-function renderWatchlistItem(item) {
-  const grid = document.getElementById('watchlist-grid');
-  const { card, slot } = buildInstrumentCard({ symbol: item.symbol, name: item.name, flag: '📈', removable: true });
-  grid.appendChild(card);
-
-  const panel = new IndexPanel(slot, item.symbol, item.name);
-  panels.push(panel);
-  watchlistPanelsBySymbol.set(item.symbol, panel);
-  panel.load();
-
-  card.querySelector('[data-role="remove"]').addEventListener('click', (e) => {
-    e.stopPropagation();
-    removeFromWatchlist(item.symbol);
-  });
 }
 
 function initWatchlist() {
+  watchlistBucket.renderSaved();
   const grid = document.getElementById('watchlist-grid');
-  getWatchlist().forEach((item) => renderWatchlistItem(item));
   applySavedOrder(grid, sortKeyFor(grid));
   makeSortable(grid, sortKeyFor(grid));
 }
 
-function initWatchlistSearch() {
-  const input = document.getElementById('watchlist-input');
-  const results = document.getElementById('watchlist-results');
+// ---------- Generic search-add box ----------
+// One reusable widget wired up three times: Watchlist and Commodities both
+// search live via /api/search (any ticker is fair game for either bucket);
+// Markets searches a small curated local pool instead, since a new exchange
+// needs real timezone/hours metadata that a ticker symbol alone can't give us.
+function initSearchAdd(inputId, resultsId, { search, onSelect, emptyText = 'No matches' }) {
+  const input = document.getElementById(inputId);
+  const results = document.getElementById(resultsId);
+  if (!input || !results) return;
   let debounceTimer = null;
 
   function closeResults() {
@@ -934,7 +998,7 @@ function initWatchlistSearch() {
 
   function renderResults(items) {
     if (!items.length) {
-      results.innerHTML = '<div class="watchlist-result-empty">No matches</div>';
+      results.innerHTML = `<div class="watchlist-result-empty">${escapeHtml(emptyText)}</div>`;
       results.classList.add('open');
       return;
     }
@@ -951,7 +1015,7 @@ function initWatchlistSearch() {
     results.classList.add('open');
     [...results.querySelectorAll('.watchlist-result')].forEach((el, i) => {
       el.addEventListener('click', () => {
-        addToWatchlist({ symbol: items[i].symbol, name: items[i].name });
+        onSelect(items[i]);
         input.value = '';
         closeResults();
       });
@@ -967,17 +1031,98 @@ function initWatchlistSearch() {
     }
     debounceTimer = setTimeout(async () => {
       try {
-        const res = await fetch(`/api/search?q=${encodeURIComponent(q)}`);
-        const items = await res.json();
-        renderResults(Array.isArray(items) ? items : []);
+        renderResults(await search(q));
       } catch (err) {
         renderResults([]);
       }
-    }, 300);
+    }, 250);
   });
 
   document.addEventListener('click', (e) => {
-    if (!e.target.closest('.watchlist-search')) closeResults();
+    if (!input.contains(e.target) && !results.contains(e.target)) closeResults();
+  });
+}
+
+async function tickerSearch(q) {
+  const res = await fetch(`/api/search?q=${encodeURIComponent(q)}`);
+  const items = await res.json();
+  return Array.isArray(items) ? items : [];
+}
+
+// ---------- Markets: add more exchanges from a curated pool ----------
+const MARKETS_EXTRA_KEY = 'markets:extra-added';
+
+function getExtraMarketIds() {
+  try {
+    const list = JSON.parse(localStorage.getItem(MARKETS_EXTRA_KEY));
+    return Array.isArray(list) ? list : [];
+  } catch (err) {
+    return [];
+  }
+}
+
+function saveExtraMarketIds(ids) {
+  try {
+    localStorage.setItem(MARKETS_EXTRA_KEY, JSON.stringify(ids));
+  } catch (err) {
+    /* localStorage unavailable — just won't persist across reloads */
+  }
+}
+
+function addMarketToDom(market, removable) {
+  const status = computeMarketStatus(market, new Date());
+  const entry = buildMarketCard(market, removable);
+  entry.isOpen = status.isOpen;
+  (status.isOpen ? openGrid : closedGrid).appendChild(entry.card);
+  applySavedOrder(entry.card.parentElement, sortKeyFor(entry.card.parentElement));
+  buildIndexPanels(market, entry.card);
+  updateCounts();
+}
+
+function addExtraMarket(market) {
+  const ids = getExtraMarketIds();
+  if (ids.includes(market.id)) return;
+  ids.push(market.id);
+  saveExtraMarketIds(ids);
+  addMarketToDom(market, true);
+}
+
+function removeExtraMarket(marketId) {
+  saveExtraMarketIds(getExtraMarketIds().filter((id) => id !== marketId));
+
+  const entry = statusEls.find((e) => e.market.id === marketId);
+  if (!entry) return;
+  for (let i = panels.length - 1; i >= 0; i--) {
+    if (entry.card.contains(panels[i].container)) {
+      panels[i].destroy();
+      panels.splice(i, 1);
+    }
+  }
+  entry.card.remove();
+  const idx = statusEls.indexOf(entry);
+  if (idx !== -1) statusEls.splice(idx, 1);
+  updateCounts();
+}
+
+function initMarketsSearch() {
+  initSearchAdd('markets-input', 'markets-results', {
+    emptyText: 'No matching exchange (or already added)',
+    search: (q) => {
+      const pool = (window.__BOOTSTRAP__ && window.__BOOTSTRAP__.marketsExtra) || [];
+      const added = new Set(getExtraMarketIds());
+      const ql = q.toLowerCase();
+      return pool
+        .filter((m) => !added.has(m.id))
+        .filter(
+          (m) =>
+            m.name.toLowerCase().includes(ql) ||
+            m.country.toLowerCase().includes(ql) ||
+            m.shortName.toLowerCase().includes(ql)
+        )
+        .slice(0, 8)
+        .map((m) => ({ symbol: m.shortName, name: m.name, exchange: m.country, _market: m }));
+    },
+    onSelect: (item) => addExtraMarket(item._market)
   });
 }
 
@@ -1271,6 +1416,8 @@ const LAYOUT_STATE_KEYS = [
   'order:commodities',
   'order:watchlist',
   'watchlist:tickers',
+  'commodities:added',
+  MARKETS_EXTRA_KEY,
   'livetv:tiles',
   PANEL_SPAN_KEY
 ];
@@ -1449,6 +1596,16 @@ async function init() {
     const markets = window.__BOOTSTRAP__.markets;
 
     main.innerHTML = `
+      <div class="watchlist-search">
+        <input
+          type="text"
+          id="markets-input"
+          class="watchlist-input"
+          placeholder="Add another exchange (e.g. Toronto, Korea)…"
+          autocomplete="off"
+        />
+        <div class="watchlist-results" id="markets-results"></div>
+      </div>
       <section class="market-section">
         <h2 class="section-title open-title">
           <span class="dot"></span>Open now — <span class="count" data-role="open-count">0</span>
@@ -1470,12 +1627,20 @@ async function init() {
     closedCountEl = main.querySelector('[data-role="closed-count"]');
 
     // Sort by soonest upcoming event so the most time-sensitive markets lead each group.
+    // Extra markets the user has previously added (from the curated pool)
+    // join the core 11 here, same treatment, just marked removable.
     const now = new Date();
-    const withStatus = markets.map((market) => ({ market, status: computeMarketStatus(market, now) }));
+    const extraPool = (window.__BOOTSTRAP__ && window.__BOOTSTRAP__.marketsExtra) || [];
+    const extraIds = new Set(getExtraMarketIds());
+    const extraMarkets = extraPool.filter((m) => extraIds.has(m.id));
+    const withStatus = [
+      ...markets.map((market) => ({ market, status: computeMarketStatus(market, now), removable: false })),
+      ...extraMarkets.map((market) => ({ market, status: computeMarketStatus(market, now), removable: true }))
+    ];
     withStatus.sort((a, b) => a.status.target - b.status.target);
 
-    withStatus.forEach(({ market, status }) => {
-      const entry = buildMarketCard(market);
+    withStatus.forEach(({ market, status, removable }) => {
+      const entry = buildMarketCard(market, removable);
       entry.isOpen = status.isOpen;
       (status.isOpen ? openGrid : closedGrid).appendChild(entry.card);
       buildIndexPanels(market, entry.card);
@@ -1486,10 +1651,18 @@ async function init() {
     makeSortable(closedGrid, sortKeyFor(closedGrid));
     updateCounts();
     tickStatuses();
+    initMarketsSearch();
 
     initCommodities();
     initWatchlist();
-    initWatchlistSearch();
+    initSearchAdd('watchlist-input', 'watchlist-results', {
+      search: tickerSearch,
+      onSelect: (item) => watchlistBucket.addItem({ symbol: item.symbol, name: item.name })
+    });
+    initSearchAdd('commodities-input', 'commodities-results', {
+      search: tickerSearch,
+      onSelect: (item) => commoditiesAddedBucket.addItem({ symbol: item.symbol, name: item.name })
+    });
     const addLiveTvBtn = initLiveTv();
 
     // Dashboard-level reordering (drag a panel by its grip handle). The

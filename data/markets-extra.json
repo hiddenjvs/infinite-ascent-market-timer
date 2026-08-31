@@ -1,0 +1,130 @@
+[
+  {
+    "id": "tsx",
+    "name": "Toronto Stock Exchange",
+    "shortName": "TSX",
+    "city": "Toronto",
+    "country": "Canada",
+    "flag": "🇨🇦",
+    "timezone": "America/Toronto",
+    "open": "09:30",
+    "close": "16:00",
+    "days": [1, 2, 3, 4, 5],
+    "indexes": [
+      { "symbol": "^GSPTSE", "name": "S&P/TSX Composite" },
+      { "symbol": "XIU.TO", "name": "S&P/TSX 60 (ETF proxy)" }
+    ]
+  },
+  {
+    "id": "asx",
+    "name": "Australian Securities Exchange",
+    "shortName": "ASX",
+    "city": "Sydney",
+    "country": "Australia",
+    "flag": "🇦🇺",
+    "timezone": "Australia/Sydney",
+    "open": "10:00",
+    "close": "16:00",
+    "days": [1, 2, 3, 4, 5],
+    "indexes": [
+      { "symbol": "^AXJO", "name": "ASX 200" },
+      { "symbol": "^AORD", "name": "All Ordinaries" }
+    ]
+  },
+  {
+    "id": "krx",
+    "name": "Korea Exchange",
+    "shortName": "KRX",
+    "city": "Seoul",
+    "country": "South Korea",
+    "flag": "🇰🇷",
+    "timezone": "Asia/Seoul",
+    "open": "09:00",
+    "close": "15:30",
+    "days": [1, 2, 3, 4, 5],
+    "indexes": [
+      { "symbol": "^KS11", "name": "KOSPI" },
+      { "symbol": "^KQ11", "name": "KOSDAQ" }
+    ]
+  },
+  {
+    "id": "six",
+    "name": "SIX Swiss Exchange",
+    "shortName": "SIX",
+    "city": "Zurich",
+    "country": "Switzerland",
+    "flag": "🇨🇭",
+    "timezone": "Europe/Zurich",
+    "open": "09:00",
+    "close": "17:30",
+    "days": [1, 2, 3, 4, 5],
+    "indexes": [
+      { "symbol": "^SSMI", "name": "SMI" },
+      { "symbol": "^SSHI", "name": "SPI" }
+    ]
+  },
+  {
+    "id": "b3",
+    "name": "B3 (Brasil Bolsa Balcão)",
+    "shortName": "B3",
+    "city": "São Paulo",
+    "country": "Brazil",
+    "flag": "🇧🇷",
+    "timezone": "America/Sao_Paulo",
+    "open": "10:00",
+    "close": "17:00",
+    "days": [1, 2, 3, 4, 5],
+    "indexes": [
+      { "symbol": "^BVSP", "name": "Bovespa" },
+      { "symbol": "^IBX50", "name": "IBrX-50" }
+    ]
+  },
+  {
+    "id": "sgx",
+    "name": "Singapore Exchange",
+    "shortName": "SGX",
+    "city": "Singapore",
+    "country": "Singapore",
+    "flag": "🇸🇬",
+    "timezone": "Asia/Singapore",
+    "open": "09:00",
+    "close": "17:00",
+    "days": [1, 2, 3, 4, 5],
+    "indexes": [
+      { "symbol": "^STI", "name": "Straits Times Index" },
+      { "symbol": "ES3.SI", "name": "STI (ETF proxy)" }
+    ]
+  },
+  {
+    "id": "twse",
+    "name": "Taiwan Stock Exchange",
+    "shortName": "TWSE",
+    "city": "Taipei",
+    "country": "Taiwan",
+    "flag": "🇹🇼",
+    "timezone": "Asia/Taipei",
+    "open": "09:00",
+    "close": "13:30",
+    "days": [1, 2, 3, 4, 5],
+    "indexes": [
+      { "symbol": "^TWII", "name": "TAIEX" },
+      { "symbol": "^TWOII", "name": "TPEx" }
+    ]
+  },
+  {
+    "id": "bmv",
+    "name": "Bolsa Mexicana de Valores",
+    "shortName": "BMV",
+    "city": "Mexico City",
+    "country": "Mexico",
+    "flag": "🇲🇽",
+    "timezone": "America/Mexico_City",
+    "open": "08:30",
+    "close": "15:00",
+    "days": [1, 2, 3, 4, 5],
+    "indexes": [
+      { "symbol": "^MXX", "name": "S&P/BMV IPC" },
+      { "symbol": "NAFTRACISHRS.MX", "name": "IPC (ETF proxy)" }
+    ]
+  }
+]

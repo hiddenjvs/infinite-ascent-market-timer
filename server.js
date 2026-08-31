@@ -3,6 +3,7 @@ const path = require('path');
 const fs = require('fs');
 const { XMLParser } = require('fast-xml-parser');
 const markets = require('./data/markets.json');
+const marketsExtra = require('./data/markets-extra.json');
 const fxCurrencies = require('./data/fx.json');
 const commodities = require('./data/commodities.json');
 
@@ -16,6 +17,7 @@ const PORT = process.env.PORT || 4173;
 const indexTemplate = fs.readFileSync(path.join(__dirname, 'public', 'index.html'), 'utf8');
 const bootstrapScript = `<script>window.__BOOTSTRAP__=${JSON.stringify({
   markets,
+  marketsExtra,
   fx: fxCurrencies,
   commodities
 })};</script>`;
@@ -40,6 +42,10 @@ app.get('/', (req, res) => {
 
 app.get('/api/markets', (req, res) => {
   res.json(markets);
+});
+
+app.get('/api/markets-extra', (req, res) => {
+  res.json(marketsExtra);
 });
 
 app.get('/api/fx', (req, res) => {

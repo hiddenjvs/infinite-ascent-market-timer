@@ -60,7 +60,7 @@
       <div class="panel-drag-handle" draggable="true">
         <span><span class="grip">⠿</span> MARKETS</span>
       </div>
-      <main id="markets-main" class="markets-main">
+      <main id="markets-main" class="markets-main panel-body">
         <p class="loading">Loading market data…</p>
       </main>
     </section>
@@ -69,7 +69,17 @@
       <div class="panel-drag-handle" draggable="true">
         <span><span class="grip">⠿</span> COMMODITIES</span>
       </div>
-      <div class="commodities-main">
+      <div class="commodities-main panel-body">
+        <div class="watchlist-search">
+          <input
+            type="text"
+            id="commodities-input"
+            class="watchlist-input"
+            placeholder="Add another commodity/future (e.g. Palladium, Wheat)…"
+            autocomplete="off"
+          />
+          <div class="watchlist-results" id="commodities-results"></div>
+        </div>
         <div class="commodities-grid" id="commodities-grid"></div>
       </div>
     </section>
@@ -78,7 +88,7 @@
       <div class="panel-drag-handle" draggable="true">
         <span><span class="grip">⠿</span> WATCHLIST</span>
       </div>
-      <div class="watchlist-main">
+      <div class="watchlist-main panel-body">
         <div class="watchlist-search">
           <input
             type="text"
@@ -97,7 +107,7 @@
       <div class="panel-drag-handle" draggable="true">
         <span><span class="grip">⠿</span> FX</span>
       </div>
-      <div class="fx-section">
+      <div class="fx-section panel-body">
         <div class="fx-bar">
           <h2 class="fx-heading">FX Cross Rates</h2>
           <span class="live-badge">
