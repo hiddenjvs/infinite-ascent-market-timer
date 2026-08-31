@@ -118,12 +118,18 @@ G10/majors.
 
 ## News sources
 
-CNBC Business News, WSJ Markets (via Dow Jones' feed infrastructure), and
-BBC Business. Reuters and AP no longer offer free public RSS syndication
-(both retired it years ago; several endpoint variants for each were tested
-and confirmed dead), so these three were chosen as the strongest free,
-no-API-key sources still available at a comparable tier — CNBC and WSJ for
-US markets depth, BBC Business for a non-US perspective.
+CNBC's Economy, Finance, Earnings, and Investing category feeds (not its
+general "Business News" feed, which mixes in lifestyle/health/real-estate
+stories), WSJ Markets (via Dow Jones' feed infrastructure), and BBC Business
+for a non-US perspective. Reuters and AP no longer offer free public RSS
+syndication (both retired it years ago; several endpoint variants for each
+were tested and confirmed dead).
+
+On top of picking targeted category feeds, every headline (checked against
+its own title *and* description) is run through a market/finance/econ/policy
+keyword filter server-side before it's ever shown — so an off-topic item
+from any single feed (BBC Business in particular, which is a general
+business feed) gets dropped rather than surfaced.
 
 ## Known limitations
 

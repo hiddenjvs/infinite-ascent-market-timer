@@ -45,17 +45,47 @@ app.get('/api/fx', (req, res) => {
 });
 
 // Finance/econ headline ticker — no free public RSS survives from Reuters or
-// AP anymore (both retired syndication years ago; confirmed dead ends), so
-// this pulls from three free, no-key sources: CNBC, WSJ Markets (Dow Jones),
-// and BBC Business (a non-US perspective in the mix).
+// AP anymore (both retired syndication years ago; confirmed dead ends).
+// CNBC's general "Business News" feed and BBC's general "Business" feed both
+// mix in non-market fluff (luxury real estate, health news, personal-finance
+// advice columns), so this pulls CNBC's dedicated Economy/Finance/Earnings/
+// Investing category feeds instead of its catch-all one, plus WSJ Markets
+// (already tightly market-focused) and BBC Business (kept for a non-US
+// perspective, filtered same as everything else below).
 const NEWS_FEEDS = [
-  { url: 'https://www.cnbc.com/id/10001147/device/rss/rss.html', source: 'CNBC' },
+  { url: 'https://www.cnbc.com/id/20910258/device/rss/rss.html', source: 'CNBC Economy' },
+  { url: 'https://www.cnbc.com/id/10000664/device/rss/rss.html', source: 'CNBC Finance' },
+  { url: 'https://www.cnbc.com/id/15839135/device/rss/rss.html', source: 'CNBC Earnings' },
+  { url: 'https://www.cnbc.com/id/15839069/device/rss/rss.html', source: 'CNBC Investing' },
   { url: 'https://feeds.content.dowjones.io/public/rss/RSSMarketsMain', source: 'WSJ Markets' },
   { url: 'https://feeds.bbci.co.uk/news/business/rss.xml', source: 'BBC Business' }
 ];
 const NEWS_CACHE_TTL_MS = 90 * 1000; // short enough that the ticker visibly refreshes
 const xmlParser = new XMLParser({ ignoreAttributes: true, htmlEntities: true });
 let newsCache = null;
+
+// Safety net on top of source selection: only keep headlines that actually
+// read as market/finance/econ/policy news, so a stray off-topic item from
+// any one feed (BBC Business in particular) doesn't slip through.
+const MARKET_RELEVANCE_RE = new RegExp(
+  '\\b(' +
+    [
+      'stocks?', 'shares?', 'markets?', 'earnings', 'revenue', 'profits?', 'ipo', 'merger',
+      'acquisitions?', 'acquir\\w*', 'buyout', 'ceo', 'cfo', 'wall street', 'federal reserve',
+      'fed', 'rate hike', 'rate cut', 'interest rates?', 'inflation', 'gdp', 'econom\\w*',
+      'recession', 'trade war', 'tariffs?', 'dollar', 'currenc\\w*', 'yen', 'euro', 'yuan',
+      'bonds?', 'treasury', 'yield', 'deficit', 'budget', 'dividends?', 'quarterly', 'fiscal',
+      'nasdaq', 'dow jones', 's&p', 'nyse', 'crypto\\w*', 'bitcoin', 'ethereum', 'oil prices?',
+      'crude', 'gold prices?', 'commodit\\w*', 'central bank', 'unemployment', 'jobs report',
+      'payrolls?', 'exports?', 'imports?', 'supply chain', 'semiconductors?', 'chip stocks?',
+      'valuation', 'buyback', 'guidance', 'forecast', 'outlook', 'downgrade', 'upgrade',
+      'analysts?', 'bankrupt\\w*', 'default', 'credit rating', 'sanctions?', 'opec', 'stake',
+      'private equity', 'hedge fund', 'investors?', 'billion deal', 'takeover', 'trillion',
+      'sec\\b', 'antitrust', 'regulators?', 'tax\\w*', 'debt', 'housing market', 'jobless'
+    ].join('|') +
+    ')\\b',
+  'i'
+);
 
 async function fetchNewsFeed(feed) {
   const r = await fetch(feed.url, { headers: YF_HEADERS });
@@ -64,13 +94,18 @@ async function fetchNewsFeed(feed) {
   const items = xmlParser.parse(xml)?.rss?.channel?.item;
   const list = Array.isArray(items) ? items : items ? [items] : [];
   return list
-    .map((item) => ({
-      headline: typeof item.title === 'string' ? item.title.trim() : '',
-      link: typeof item.link === 'string' ? item.link : null,
-      pubDate: item.pubDate ? Date.parse(item.pubDate) || null : null,
-      source: feed.source
-    }))
-    .filter((n) => n.headline);
+    .map((item) => {
+      const headline = typeof item.title === 'string' ? item.title.trim() : '';
+      const description = typeof item.description === 'string' ? item.description : '';
+      return {
+        headline,
+        link: typeof item.link === 'string' ? item.link : null,
+        pubDate: item.pubDate ? Date.parse(item.pubDate) || null : null,
+        source: feed.source,
+        _relevanceText: `${headline} ${description}`
+      };
+    })
+    .filter((n) => n.headline && MARKET_RELEVANCE_RE.test(n._relevanceText));
 }
 
 app.get('/api/news', async (req, res) => {
@@ -107,8 +142,15 @@ app.get('/api/news', async (req, res) => {
     if (!addedAny) break;
   }
 
-  newsCache = { at: Date.now(), data: deduped };
-  res.json(deduped);
+  const payload = deduped.map(({ headline, link, pubDate, source }) => ({
+    headline,
+    link,
+    pubDate,
+    source
+  }));
+
+  newsCache = { at: Date.now(), data: payload };
+  res.json(payload);
 });
 
 app.get('/api/chart/:symbol', async (req, res) => {
