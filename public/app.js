@@ -916,9 +916,14 @@ const LIVETV_SOURCES = [
 ];
 const LIVETV_KEY = 'livetv:source';
 
+let liveTvCurrentId = null;
+let liveTvCurrentVideoId = null;
+let liveTvRefreshTimer = null;
+
 function initLiveTv() {
   const tabsEl = document.getElementById('livetv-tabs');
   const frame = document.getElementById('livetv-frame');
+  const noteEl = document.querySelector('.livetv-note');
   if (!tabsEl || !frame) return;
 
   let saved;
@@ -928,17 +933,42 @@ function initLiveTv() {
     saved = null;
   }
 
-  function setSource(id) {
+  async function setSource(id) {
     const src = LIVETV_SOURCES.find((s) => s.id === id) || LIVETV_SOURCES[0];
-    // youtube-nocookie.com is YouTube's own privacy-enhanced embed domain —
-    // same live_stream API, but it doesn't set tracking cookies until the
-    // viewer actually interacts with the player.
-    frame.src = `https://www.youtube-nocookie.com/embed/live_stream?channel=${src.channel}&autoplay=1&mute=1`;
+    liveTvCurrentId = src.id;
     [...tabsEl.children].forEach((b) => b.classList.toggle('active', b.dataset.id === src.id));
     try {
       localStorage.setItem(LIVETV_KEY, src.id);
     } catch (err) {
       /* localStorage unavailable — selection just won't persist */
+    }
+    liveTvCurrentVideoId = null; // force the embed to (re)load below
+    await refreshLiveVideo();
+
+    clearInterval(liveTvRefreshTimer);
+    liveTvRefreshTimer = setInterval(refreshLiveVideo, 5 * 60 * 1000);
+  }
+
+  // Resolves the channel's current live video id server-side (the id itself
+  // changes whenever a broadcast ends and the next one begins) and only
+  // touches the iframe if it's actually different, so a periodic refresh
+  // doesn't interrupt playback that's already running fine.
+  async function refreshLiveVideo() {
+    const src = LIVETV_SOURCES.find((s) => s.id === liveTvCurrentId);
+    if (!src) return;
+    try {
+      const res = await fetch(`/api/livetv/${encodeURIComponent(src.channel)}`);
+      const data = await res.json();
+      if (!data.videoId) throw new Error(data.error || 'no live video');
+      if (data.videoId !== liveTvCurrentVideoId) {
+        liveTvCurrentVideoId = data.videoId;
+        frame.src = `https://www.youtube-nocookie.com/embed/${data.videoId}?autoplay=1&mute=1`;
+      }
+      if (noteEl) noteEl.textContent = '';
+    } catch (err) {
+      if (noteEl && liveTvCurrentId === src.id) {
+        noteEl.textContent = `${src.label} doesn't appear to be broadcasting live right now.`;
+      }
     }
   }
 

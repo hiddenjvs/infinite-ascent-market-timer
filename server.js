@@ -77,6 +77,42 @@ app.get('/api/search', async (req, res) => {
   }
 });
 
+// Live TV — resolves a YouTube channel's CURRENTLY live video id server-side,
+// then the frontend embeds that specific video via the standard, universally
+// supported /embed/VIDEO_ID pattern. We tried the alternative
+// /embed/live_stream?channel=... parameter first (avoids ever needing to
+// resolve anything), but it turned out to work for some channels (Bloomberg,
+// CNBC) and not others (NBC, Sky News) for reasons that aren't documented —
+// resolving the real video id and embedding it directly is more reliable
+// and works uniformly across channels. Cached briefly since a channel's
+// live video id only changes when one broadcast ends and the next begins.
+const LIVETV_CACHE_TTL_MS = 5 * 60 * 1000;
+const livetvCache = new Map();
+
+app.get('/api/livetv/:channel', async (req, res) => {
+  const { channel } = req.params;
+  const cached = livetvCache.get(channel);
+  if (cached && Date.now() - cached.at < LIVETV_CACHE_TTL_MS) {
+    return res.json(cached.data);
+  }
+
+  try {
+    const url = `https://www.youtube.com/channel/${encodeURIComponent(channel)}/live`;
+    const r = await fetch(url, { headers: YF_HEADERS });
+    if (!r.ok) throw new Error(`YouTube responded ${r.status}`);
+    const html = await r.text();
+    const match = html.match(/"videoDetails":\{"videoId":"([A-Za-z0-9_-]{11})"/);
+    if (!match) throw new Error('No live video found for this channel');
+
+    const data = { videoId: match[1] };
+    livetvCache.set(channel, { at: Date.now(), data });
+    res.json(data);
+  } catch (err) {
+    if (cached) return res.json(cached.data);
+    res.status(502).json({ error: err.message });
+  }
+});
+
 // Finance/econ headline ticker — no free public RSS survives from Reuters or
 // AP anymore (both retired syndication years ago; confirmed dead ends).
 // CNBC's general "Business News" feed and BBC's general "Business" feed both
