@@ -118,13 +118,12 @@ G10/majors.
 
 ## News sources
 
-CNBC Business News, WSJ Markets (via Dow Jones' feed infrastructure), Yahoo
-Finance, and BBC Business. Reuters and AP no longer offer free public RSS
-syndication (both retired it years ago; several endpoint variants for each
-were tested and confirmed dead), so these four were chosen as the strongest
-free, no-API-key sources still available at a comparable tier — CNBC and
-WSJ for US markets depth, Yahoo Finance for volume, BBC Business for a
-non-US perspective.
+CNBC Business News, WSJ Markets (via Dow Jones' feed infrastructure), and
+BBC Business. Reuters and AP no longer offer free public RSS syndication
+(both retired it years ago; several endpoint variants for each were tested
+and confirmed dead), so these three were chosen as the strongest free,
+no-API-key sources still available at a comparable tier — CNBC and WSJ for
+US markets depth, BBC Business for a non-US perspective.
 
 ## Known limitations
 

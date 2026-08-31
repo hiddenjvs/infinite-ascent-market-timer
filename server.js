@@ -46,13 +46,11 @@ app.get('/api/fx', (req, res) => {
 
 // Finance/econ headline ticker — no free public RSS survives from Reuters or
 // AP anymore (both retired syndication years ago; confirmed dead ends), so
-// this pulls from four free, no-key sources for both volume and diversity:
-// CNBC, WSJ Markets (Dow Jones), Yahoo Finance, and BBC Business (a non-US
-// perspective in the mix).
+// this pulls from three free, no-key sources: CNBC, WSJ Markets (Dow Jones),
+// and BBC Business (a non-US perspective in the mix).
 const NEWS_FEEDS = [
   { url: 'https://www.cnbc.com/id/10001147/device/rss/rss.html', source: 'CNBC' },
   { url: 'https://feeds.content.dowjones.io/public/rss/RSSMarketsMain', source: 'WSJ Markets' },
-  { url: 'https://finance.yahoo.com/news/rssindex', source: 'Yahoo Finance' },
   { url: 'https://feeds.bbci.co.uk/news/business/rss.xml', source: 'BBC Business' }
 ];
 const NEWS_CACHE_TTL_MS = 90 * 1000; // short enough that the ticker visibly refreshes
