@@ -968,6 +968,25 @@ a.headline-text:hover {
   color: var(--text);
 }
 
+.layouts-reset-btn {
+  flex: none;
+  background: transparent;
+  border: 1px solid var(--hairline);
+  color: var(--text-faint);
+  font-family: var(--mono);
+  font-size: 10px;
+  font-weight: 600;
+  padding: 3px 10px;
+  border-radius: 999px;
+  cursor: pointer;
+  transition: border-color 150ms var(--ease-spring), color 150ms var(--ease-spring);
+}
+
+.layouts-reset-btn:hover {
+  border-color: var(--red);
+  color: var(--red);
+}
+
 /* ---------- Self-compacting dashboard grid ----------
    Panels are NOT CSS Grid items — they're `position: absolute` inside a
    `position: relative` container, with left/top/width/height computed in JS

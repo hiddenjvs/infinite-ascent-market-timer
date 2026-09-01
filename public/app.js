@@ -2209,6 +2209,36 @@ if (layoutsSaveBtn) {
   });
 }
 
+// A one-click way back to a known-good state — clears every piece of live
+// dashboard state (panel sizes/positions, closed panels, added tiles,
+// watchlist, etc.) without touching any saved named layouts, since those
+// are a deliberate, separate save the user probably still wants.
+const layoutsResetBtn = document.getElementById('layouts-reset-btn');
+if (layoutsResetBtn) {
+  layoutsResetBtn.addEventListener('click', () => {
+    if (
+      !confirm(
+        'Reset to the default layout? This clears all panel positions, sizes, and any added/closed windows. Saved named layouts are not affected.'
+      )
+    ) {
+      return;
+    }
+    LAYOUT_STATE_KEYS.forEach((k) => {
+      try {
+        localStorage.removeItem(k);
+      } catch (err) {
+        /* localStorage unavailable */
+      }
+    });
+    try {
+      localStorage.removeItem(LAYOUTS_ACTIVE_KEY);
+    } catch (err) {
+      /* localStorage unavailable */
+    }
+    location.reload();
+  });
+}
+
 // ---------- Market news ticker ----------
 // One headline shown at a time, rolling to the next on the SAME 20s cycle as
 // refreshAll() (not a separate timer) so it's synced with the market/FX pulse.
