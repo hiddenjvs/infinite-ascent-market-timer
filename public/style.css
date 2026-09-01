@@ -1000,60 +1000,169 @@ a.headline-text:hover {
    under the hood anyway. left/top/width/height all transition so moving,
    resizing, adding, or removing a widget reflows everything else with a
    visible, continuous animation rather than a jump cut. */
+/* ---------- Docked tiling workspace (Capital IQ-style split panes) ----------
+   #dashboard-panels is the workspace root; its single child is either a
+   .tile-pane (one leaf panel filling the whole workspace) or a .tile-split
+   (a row/column of .tile-pane wrappers separated by .tile-divider
+   elements). Every leaf is a rectangular region that shares a border with
+   its neighbors — there is no absolute positioning and no gap between
+   panels; resizing one always moves the shared divider, which is why a
+   pane's size lives as a flex-basis percentage of its parent split rather
+   than an independent width/height. See dashboardTree in app.js.
+*/
 #dashboard-panels {
-  position: relative;
-  padding: 0 6px;
-  /* height is set by JS to the packed content height — never auto, since
-     absolutely-positioned children contribute nothing to it themselves. */
+  display: flex;
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-lg);
+  /* auto, not hidden — on a narrow viewport the tree's cumulative minimum
+     widths (see computeMinSize in app.js) can genuinely exceed the
+     available space; scrolling to reach a squeezed panel is correct,
+     silently clipping it out of reach is not. */
+  overflow: auto;
+  min-height: 480px;
 }
 
-/* Set by repackDashboard() while it measures natural content height — a
-   synchronous read right after changing a *transitioned* width can
-   otherwise catch the box mid-transition instead of at its true target
-   width. Never actually painted (removed again before the same function
-   applies final positions), so it doesn't cost the settle-into-place
-   animation. */
-#dashboard-panels.grid-measuring .dashboard-panel {
-  transition: none !important;
+.tile-split {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
 }
 
-.dashboard-panel {
-  position: absolute;
+.tile-split.tile-row {
+  flex-direction: row;
+}
+
+.tile-split.tile-column {
+  flex-direction: column;
+}
+
+.tile-pane {
   display: flex;
   flex-direction: column;
-  overflow: hidden;
   min-width: 0;
-  transition: left 220ms var(--ease-spring), top 220ms var(--ease-spring),
-    width 220ms var(--ease-spring), height 220ms var(--ease-spring), opacity 150ms ease;
+  min-height: 0;
+  overflow: hidden;
+  position: relative;
+}
+
+/* Every pane shares a border with its neighbor instead of a gutter —
+   dividers themselves (below) are the only thing between two panes. */
+.dashboard-panel {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  background: var(--bg);
 }
 
 .dashboard-panel .panel-body {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
+  /* Reserves the scrollbar's width up front instead of only once content
+     turns out to be tall enough to need one — without this, a chart whose
+     width gets measured before that's determined (any chart isn't the
+     very first thing painted) gets built too wide, then visibly shrinks
+     by exactly the scrollbar's width once it actually appears. Measured,
+     reproducible CLS source; this is the standard fix for it. */
+  scrollbar-gutter: stable;
 }
 
-/* No live position/size feedback while actively dragging or resizing — the
-   pointer needs 1:1 tracking there; the settle-into-place animation is for
-   every OTHER panel reflowing in response, and for this one once released. */
-.dashboard-panel.panel-dragging,
-.dashboard-panel.resizing {
-  transition: opacity 150ms ease;
+/* The shared structural divider between two sibling panes — dragging it
+   resizes both neighbors reciprocally, never just one of them. */
+.tile-divider {
+  flex: none;
+  background: var(--hairline);
+  position: relative;
+  z-index: 2;
+  touch-action: none;
 }
 
-.dashboard-panel.panel-dragging {
-  opacity: 0.4;
+.tile-divider-row {
+  width: 1px;
+  cursor: col-resize;
 }
 
-.dashboard-panel.resizing {
-  z-index: 5;
-  opacity: 0.92;
+.tile-divider-row::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: -3px;
+  right: -3px;
 }
 
-.dashboard-panel.panel-drop-target {
-  outline: 1.5px dashed var(--accent);
-  outline-offset: -1.5px;
-  border-radius: var(--radius-lg);
+.tile-divider-column {
+  height: 1px;
+  cursor: row-resize;
+}
+
+.tile-divider-column::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: -3px;
+  bottom: -3px;
+}
+
+.tile-divider:hover,
+.tile-divider.dragging {
+  background: var(--accent);
+}
+
+/* Alignment guide shown while dragging a divider or a panel — a full-length
+   line across the workspace at the position being snapped to. */
+.tile-guide {
+  position: fixed;
+  background: var(--accent);
+  z-index: 50;
+  pointer-events: none;
+}
+
+.tile-guide.tile-guide-v {
+  width: 1px;
+}
+
+.tile-guide.tile-guide-h {
+  height: 1px;
+}
+
+/* Dock-zone overlay shown on the panel currently under a dragged panel's
+   pointer — five regions (left/right/top/bottom/center) indicating where
+   dropping would dock it. */
+.tile-dock-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 40;
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  grid-template-rows: 1fr 1fr 1fr;
+  pointer-events: none;
+}
+
+.tile-dock-zone {
+  background: rgba(10, 132, 255, 0.05);
+  border: 1px solid transparent;
+  transition: background-color 100ms ease, border-color 100ms ease;
+}
+
+.tile-dock-zone.active {
+  background: rgba(10, 132, 255, 0.28);
+  border-color: var(--accent);
+}
+
+.tile-dock-zone-top { grid-column: 1 / 4; grid-row: 1; }
+.tile-dock-zone-left { grid-column: 1; grid-row: 2; }
+.tile-dock-zone-center { grid-column: 2; grid-row: 2; }
+.tile-dock-zone-right { grid-column: 3; grid-row: 2; }
+.tile-dock-zone-bottom { grid-column: 1 / 4; grid-row: 3; }
+
+.dashboard-panel.tile-drag-source {
+  opacity: 0.35;
 }
 
 .panel-drag-handle {
@@ -1090,37 +1199,6 @@ a.headline-text:hover {
   display: flex;
   align-items: center;
   gap: 5px;
-}
-
-/* Drag-to-resize handle — bottom-right corner of every panel, generic
-   regardless of what the panel contains. */
-.panel-resize-handle {
-  position: absolute;
-  right: 0;
-  bottom: 0;
-  width: 18px;
-  height: 18px;
-  cursor: nwse-resize;
-  touch-action: none;
-  opacity: 0;
-  transition: opacity 150ms var(--ease-spring);
-}
-
-.dashboard-panel:hover .panel-resize-handle,
-.dashboard-panel.resizing .panel-resize-handle {
-  opacity: 1;
-}
-
-.panel-resize-handle::after {
-  content: '';
-  position: absolute;
-  right: 4px;
-  bottom: 4px;
-  width: 8px;
-  height: 8px;
-  border-right: 2px solid var(--text-dim);
-  border-bottom: 2px solid var(--text-dim);
-  border-bottom-right-radius: 2px;
 }
 
 /* ============================================================
@@ -1541,19 +1619,24 @@ a.headline-text:hover {
 
 /* "+" ghost tile — always the trailing item in the matrix, click to add
    another Live TV tile. */
+/* A toolbar button in the layouts bar, not a tile inside the tiling
+   workspace itself — the workspace is strictly the docked panel tree, and
+   adding a window is a toolbar action, not another leaf to dock by default.
+   Where the new panel actually lands is decided by auto-docking it into the
+   currently-largest pane (see dockNewLeaf in app.js). */
 .add-panel-tile {
-  display: flex;
-  flex-direction: column;
+  position: relative;
+  flex: none;
+  display: inline-flex;
   align-items: center;
-  justify-content: center;
-  gap: 6px;
-  min-height: 120px;
+  gap: 5px;
   background: transparent;
-  border: 1.5px dashed var(--hairline);
-  border-radius: var(--radius-lg);
+  border: 1px dashed var(--hairline);
+  border-radius: 999px;
+  padding: 3px 10px 3px 8px;
   color: var(--text-faint);
   font-family: var(--mono);
-  font-size: 11px;
+  font-size: 10px;
   font-weight: 600;
   letter-spacing: 0.04em;
   cursor: pointer;
@@ -1568,7 +1651,7 @@ a.headline-text:hover {
 }
 
 .add-panel-plus {
-  font-size: 22px;
+  font-size: 14px;
   font-weight: 400;
   line-height: 1;
 }
@@ -1577,8 +1660,7 @@ a.headline-text:hover {
 .add-window-menu {
   position: absolute;
   top: calc(100% + 6px);
-  left: 50%;
-  transform: translateX(-50%);
+  left: 0;
   z-index: 10;
   width: max-content;
   min-width: 180px;

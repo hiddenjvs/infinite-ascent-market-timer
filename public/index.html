@@ -50,12 +50,23 @@
     <div class="layouts-tabs" id="layouts-tabs"></div>
     <button class="layouts-save-btn" id="layouts-save-btn" type="button">+ Save current layout</button>
     <button class="layouts-reset-btn" id="layouts-reset-btn" type="button">Reset to default</button>
+    <div class="add-panel-tile" id="add-panel-tile">
+      <span class="add-panel-plus">+</span><span>Add Window</span>
+      <div class="add-window-menu hidden" data-role="menu">
+        <button type="button" data-type="livetv">📺 Live TV</button>
+        <button type="button" data-type="ticker">📈 Stock / Ticker</button>
+        <button type="button" data-type="commodity">🛢️ Commodity</button>
+        <button type="button" data-type="bond">🏦 Bond</button>
+        <button type="button" data-type="market">🌍 Market</button>
+        <div data-role="restore-slot"></div>
+      </div>
+    </div>
   </div>
   <p class="reorg-hint">
-    Drag any panel by its <span class="grip">⠿</span> handle to reposition it, or its corner to
-    resize it — the rest of the dashboard automatically reflows around it, closing gaps and
-    filling unused space. <b>+ Add Window</b> adds a market, stock, commodity, bond, or live TV
-    tile.
+    Drag any panel's <span class="grip">⠿</span> handle onto another panel to dock it there —
+    left/right/top/bottom splits that panel, center swaps them. Drag a shared border to resize
+    both sides at once. <b>+ Add Window</b> adds a market, stock, commodity, bond, or live TV
+    tile into the largest open panel.
   </p>
 
   <div id="dashboard-panels">

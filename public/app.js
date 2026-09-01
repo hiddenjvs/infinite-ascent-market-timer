@@ -305,22 +305,31 @@ class IndexPanel {
     });
   }
 
+  // Forces an immediate check instead of waiting on the ResizeObserver's own
+  // (necessarily async, post-paint) callback — called right after the
+  // dashboard tree moves every panel into its real final position/size, so
+  // a chart built while its container was still at some placeholder width
+  // gets corrected before the browser ever paints the wrong size, instead
+  // of visibly resizing a moment later (a real, measured CLS regression).
+  syncSize() {
+    if (!this.chart) return;
+    const w = this.chartEl.clientWidth;
+    const h = this.chartEl.clientHeight;
+    if (w > 0 && h > 0 && (w !== this._lastW || h !== this._lastH)) {
+      this._lastW = w;
+      this._lastH = h;
+      this.chart.applyOptions({ width: w, height: h });
+    }
+  }
+
   buildChart() {
     const { chart, series } = createPriceChart(this.chartEl);
     this.chart = chart;
     this.series = series;
 
-    let lastW = this.chartEl.clientWidth;
-    let lastH = this.chartEl.clientHeight;
-    const ro = new ResizeObserver(() => {
-      const w = this.chartEl.clientWidth;
-      const h = this.chartEl.clientHeight;
-      if (w > 0 && h > 0 && (w !== lastW || h !== lastH)) {
-        lastW = w;
-        lastH = h;
-        this.chart.applyOptions({ width: w, height: h });
-      }
-    });
+    this._lastW = this.chartEl.clientWidth;
+    this._lastH = this.chartEl.clientHeight;
+    const ro = new ResizeObserver(() => this.syncSize());
     ro.observe(this.chartEl);
     this.resizeObserver = ro;
 
@@ -555,10 +564,7 @@ function tickStatuses() {
     }
   });
 
-  if (groupsChanged) {
-    updateCounts();
-    repackDashboard();
-  }
+  if (groupsChanged) updateCounts();
 }
 setInterval(tickStatuses, 1000);
 
@@ -574,7 +580,6 @@ function sortKeyFor(el) {
   if (el.id === 'commodities-grid') return 'order:commodities';
   if (el.id === 'bonds-grid') return 'order:bonds';
   if (el.id === 'watchlist-grid') return 'order:watchlist';
-  if (el.id === 'dashboard-panels') return 'order:dashboard-panels';
   return null;
 }
 
@@ -606,7 +611,7 @@ function applySavedOrder(container, storageKey) {
 
 function makeSortable(container, storageKey, { handleSelector, afterReorder } = {}) {
   let dragEl = null;
-  const draggingClass = container.id === 'dashboard-panels' ? 'panel-dragging' : 'item-dragging';
+  const draggingClass = 'item-dragging';
 
   function itemsExcept(el) {
     return [...container.children].filter((c) => c !== el && c.dataset.sortId);
@@ -668,314 +673,482 @@ function makeSortable(container, storageKey, { handleSelector, afterReorder } = 
   });
 }
 
-// ---------- Self-compacting dashboard grid ----------
-// Every top-level panel (core panels, standalone tiles, Live TV tiles) is
-// positioned with an inline left/top/width/height computed here, not by
-// CSS Grid — an earlier attempt at panel height via `grid-row: span N` +
-// `grid-auto-rows` caused a real, measured CLS regression (CSS Grid's
-// "automatic minimum size" rules for items that don't span rows
-// themselves). Absolute positioning sidesteps that entirely and is what
-// every real JS grid-layout engine (Gridstack, react-grid-layout) does
-// under the hood anyway.
+// ---------- Docked tiling workspace (Capital IQ-style split panes) ----------
+// The workspace is a binary tree: every node is either a leaf (one real
+// panel, referenced by its data-sort-id) or a split (a row/column of
+// children, each with a size — a percentage of the split's own box).
+// Rendering walks the tree into nested flex containers with a divider
+// between each pair of siblings; there is never a gap between panels and
+// never an independent width/height on one — every pane's size is relative
+// to its immediate siblings, so dragging a divider always moves the shared
+// border rather than growing one pane into empty space.
 //
-// Widths are stored as a FRACTION of the full width (0-1) rather than a
-// fixed column count, so they remap cleanly to any column count at any
-// responsive breakpoint. Heights are a literal pixel value — either the
-// panel's own natural content height (measured fresh every repack) or
-// whatever the user last dragged it to.
-//
-// Placement is a skyline/shortest-column packer: each panel, in DOM order
-// (= drag-reorder priority), goes wherever its column span would end up
-// shortest. That's the technique behind every masonry/bento-style layout,
-// and it's what makes a narrower widget stack neatly beneath a shorter
-// neighbor instead of leaving a gap — moving, resizing, adding, or removing
-// any one panel reflows every other one to close the gap, with no
-// leftover empty space and no manual "N across" preset needed.
-const DASHBOARD_GRID_KEY = 'dashboard:grid';
-const GRID_TOTAL_COLS = 24;
-const GRID_GUTTER = 10;
-const GRID_MIN_COLSPAN = 4;
-const GRID_HEIGHT_MIN = 120;
+// Panel DOM elements are never recreated — recreating would tear down
+// their chart instances/timers. getPanelElement() finds-or-caches the
+// existing element for an id (the five core panels start already in the
+// DOM from index.html; dynamic tiles register themselves when built), and
+// render just moves that same node into its new slot in the tree.
+const DASHBOARD_TREE_KEY = 'dashboard:tree';
+const PANE_MIN_PX = { row: 260, column: 160 };
+const SNAP_THRESHOLD_PX = 8;
 
-function getDashboardGridState() {
-  try {
-    const s = JSON.parse(localStorage.getItem(DASHBOARD_GRID_KEY));
-    return s && typeof s === 'object' ? s : {};
-  } catch (err) {
-    return {};
-  }
+function makeLeaf(id) {
+  return { type: 'leaf', id };
 }
 
-function setDashboardGridState(id, partial) {
-  const state = getDashboardGridState();
-  state[id] = { ...state[id], ...partial };
-  try {
-    localStorage.setItem(DASHBOARD_GRID_KEY, JSON.stringify(state));
-  } catch (err) {
-    /* localStorage unavailable — sizing just won't persist */
-  }
+function makeSplit(dir, children) {
+  return { type: 'split', dir, children };
 }
 
-// Column count per breakpoint (rules 10-12): full 24-column width on a
-// large desktop, fewer columns — so each widget's stored fraction maps to a
-// visually larger share — as the viewport narrows, collapsing to a single
-// column (full vertical stack) below ~640px.
-function getResponsiveColCount() {
-  const w = window.innerWidth;
-  if (w < 640) return 1;
-  if (w < 960) return 8;
-  if (w < 1360) return 16;
-  return GRID_TOTAL_COLS;
-}
-
-// Priority sizing (rule 7): the five curated panels are this dashboard's
-// primary analytical content and default to full width; an individual
-// standalone instrument/market tile or a Live TV feed is secondary
-// added-on content and defaults to a third of the width.
-// Every panel defaults to the same half-width size (so a pair packs side by
-// side) — a uniform grid of same-sized windows reads cleaner than a
-// hierarchy of different widths — with one deliberate exception: Markets
-// holds roughly 3-5x as many rows of content as any other single panel (11
-// exchanges x 2 indexes each vs. a handful of commodities/bonds/tickers).
-// Forcing it into a half-width column made it far shorter than the combined
-// height of every other panel stacked in the other column, leaving a large
-// empty gap at the bottom of the Markets side — full width lets it spread
-// across twice as many cards per row instead, which is what actually closes
-// that gap rather than just moving it around. The FX matrix's own
-// minimum-width floor (see minColSpanFor) still applies on top of this if
-// the user tries to manually shrink it further — that's a hard legibility
-// constraint, not a sizing preference.
-function defaultColFractionFor(el) {
-  return el.dataset.sortId === 'markets' ? 1 : 1 / 2;
-}
-
-// Minimum usable size (rule 8) — the FX cross-rate matrix is a dense 13x13
-// table that becomes illegible well before the generic floor would kick in.
-function minColSpanFor(el, totalCols) {
-  const floor = el.dataset.sortId === 'fx' ? 12 : GRID_MIN_COLSPAN;
-  return Math.min(totalCols, floor);
-}
-
-function colWidthCalc(totalCols, span) {
-  if (span >= totalCols) return '100%';
-  const gutters = GRID_GUTTER * (totalCols - 1);
-  return `calc((100% - ${gutters}px) / ${totalCols} * ${span} + ${(span - 1) * GRID_GUTTER}px)`;
-}
-
-function colLeftCalc(totalCols, col) {
-  if (col <= 0) return '0px';
-  const gutters = GRID_GUTTER * (totalCols - 1);
-  return `calc((100% - ${gutters}px) / ${totalCols} * ${col} + ${col * GRID_GUTTER}px)`;
-}
-
-// A stray NaN/0/negative stored value (from any edge case, past or future)
-// would otherwise cascade through every downstream Math.min/max — those
-// silently propagate NaN rather than throwing, which breaks placement for
-// every panel processed after the corrupted one, not just its own. Anything
-// read from localStorage gets validated before use.
-function sanitizePositiveNumber(v) {
-  return typeof v === 'number' && Number.isFinite(v) && v > 0 ? v : null;
-}
-
-function panelColSpan(el, totalCols, state) {
-  const saved = state[el.dataset.sortId];
-  const savedFraction = saved ? sanitizePositiveNumber(saved.colFraction) : null;
-  const fraction = savedFraction != null ? Math.min(1, savedFraction) : defaultColFractionFor(el);
-  const min = minColSpanFor(el, totalCols);
-  return Math.max(min, Math.min(totalCols, Math.round(fraction * totalCols)));
-}
-
-function repackDashboard() {
-  const dashboardPanels = document.getElementById('dashboard-panels');
-  if (!dashboardPanels) return;
-  try {
-    repackDashboardInner(dashboardPanels);
-  } catch (err) {
-    // Every interactive action (add/remove/resize/reorder a panel) ends
-    // with a repack call — if this function throws, the caller's own work
-    // (a tile getting inserted, a search result being selected, etc.) had
-    // already happened, but the *visible* result would silently never
-    // appear, reading to the user as "nothing happened when I clicked
-    // that." Surface it instead of swallowing it, and don't let it take
-    // down whatever called us.
-    console.error('repackDashboard failed:', err);
-  } finally {
-    dashboardPanels.classList.remove('grid-measuring');
-  }
-}
-
-function repackDashboardInner(dashboardPanels) {
-  const addTile = dashboardPanels.querySelector('.add-panel-tile');
-  const panelEls = [...dashboardPanels.querySelectorAll('.dashboard-panel[data-sort-id]')];
-  const totalCols = getResponsiveColCount();
-
-  // Reading scrollHeight synchronously right after changing a *transitioned*
-  // width can catch the box mid-transition (still at ~its old width) rather
-  // than at the new target — most visible on the Live TV tile, whose 16:9
-  // aspect-ratio wrapper makes height very width-sensitive. Suppress the
-  // transition for the measurement passes only; nothing gets painted until
-  // this function returns, so re-enabling it before the final pass doesn't
-  // lose the settle-into-place animation.
-  dashboardPanels.classList.add('grid-measuring');
-  const state = getDashboardGridState();
-
-  // Pass 1: commit width first — natural content height (measured next)
-  // needs to reflow against its real width, not whatever it had before.
-  // Also clear any explicit height left over from an earlier repack on
-  // panels using natural sizing: .panel-body has overflow-y:auto (so a
-  // manually-resized panel can scroll its own overflow), which means once
-  // a panel has ANY explicit height, that overflow is absorbed internally
-  // and never bubbles up — el.scrollHeight then just echoes the SAME old
-  // height back forever, regardless of how much taller the real content
-  // has since grown (e.g. once real prices replace "—" placeholders after
-  // the initial load, or a search-added card is appended). Height has to
-  // come off before measuring, or growth silently stops after one repack.
-  panelEls.forEach((el) => {
-    const span = panelColSpan(el, totalCols, state);
-    el.dataset.gridColSpan = span;
-    el.style.width = colWidthCalc(totalCols, span);
-
-    const saved = state[el.dataset.sortId];
-    const hasManualHeight = saved && sanitizePositiveNumber(saved.heightPx) != null;
-    if (!hasManualHeight) el.style.height = 'auto';
-  });
-
-  // Pass 2: measure natural height, then place with a shortest-column scan
-  // (classic skyline bin-packing — the same idea as Pinterest-style
-  // masonry, just grid-snapped instead of free-flowing).
-  const colHeights = new Array(totalCols).fill(0);
-  const placements = [];
-  panelEls.forEach((el) => {
-    const saved = state[el.dataset.sortId];
-    const savedHeight = saved ? sanitizePositiveNumber(saved.heightPx) : null;
-    const span = parseInt(el.dataset.gridColSpan, 10);
-    const heightPx = savedHeight != null ? savedHeight : Math.max(GRID_HEIGHT_MIN, el.scrollHeight);
-
-    let bestCol = 0;
-    let bestY = Infinity;
-    for (let c = 0; c <= totalCols - span; c++) {
-      let y = 0;
-      for (let k = c; k < c + span; k++) y = Math.max(y, colHeights[k]);
-      if (y < bestY) {
-        bestY = y;
-        bestCol = c;
-      }
+// A reasonable starting arrangement for a fresh visitor — Markets (the
+// densest panel) gets the most width; everything else shares the rest.
+function defaultDashboardTree() {
+  return makeSplit('row', [
+    { size: 60, node: makeLeaf('markets') },
+    {
+      size: 40,
+      node: makeSplit('column', [
+        {
+          size: 32,
+          node: makeSplit('row', [
+            { size: 50, node: makeLeaf('commodities') },
+            { size: 50, node: makeLeaf('bonds') }
+          ])
+        },
+        { size: 16, node: makeLeaf('watchlist') },
+        { size: 52, node: makeLeaf('fx') }
+      ])
     }
-    for (let k = bestCol; k < bestCol + span; k++) colHeights[k] = bestY + heightPx + GRID_GUTTER;
-    placements.push({ el, col: bestCol, span, top: bestY, height: heightPx });
-  });
-
-  // Pass 3: greedily expand each widget rightward into any space that's
-  // genuinely empty across its whole vertical range (no other placed widget
-  // starts there at any point it's on screen) — otherwise a widget left
-  // alone in an otherwise-empty row (e.g. an odd one out among half-width
-  // panels) would sit at its stored width with dead space beside it, which
-  // is exactly the "small widget, big unused area" rule 6/15 rule against.
-  // This is a render-time stretch only — it does not overwrite the widget's
-  // own stored colFraction, so a later-added widget can still claim that
-  // space instead once there's something to put there.
-  placements.forEach((p) => {
-    let boundary = totalCols;
-    placements.forEach((other) => {
-      if (other === p || other.col <= p.col) return;
-      const overlapsY = other.top < p.top + p.height && p.top < other.top + other.height;
-      if (overlapsY) boundary = Math.min(boundary, other.col);
-    });
-    if (boundary > p.col + p.span) p.span = boundary - p.col;
-  });
-
-  // Pass 4: apply final position — transitions back on so this (and every
-  // other panel that moved) animates into place.
-  dashboardPanels.classList.remove('grid-measuring');
-  placements.forEach(({ el, col, span, top, height }) => {
-    el.style.left = colLeftCalc(totalCols, col);
-    el.style.width = colWidthCalc(totalCols, span);
-    el.style.top = `${top}px`;
-    el.style.height = `${height}px`;
-  });
-
-  const contentBottom = Math.max(0, ...colHeights);
-
-  // The "+ Add Window" ghost tile isn't a real widget — park it in a fixed
-  // small slot right after everything else instead of feeding it through
-  // the packer.
-  let totalHeight = contentBottom;
-  if (addTile) {
-    const addSpan = Math.min(totalCols, Math.max(GRID_MIN_COLSPAN, Math.round(totalCols / 4)));
-    addTile.style.width = colWidthCalc(totalCols, addSpan);
-    addTile.style.left = colLeftCalc(totalCols, 0);
-    addTile.style.top = `${contentBottom}px`;
-    addTile.style.height = `${GRID_HEIGHT_MIN}px`;
-    totalHeight = contentBottom + GRID_HEIGHT_MIN + GRID_GUTTER;
-  }
-
-  dashboardPanels.style.height = `${totalHeight}px`;
+  ]);
 }
 
-// Recalculate on viewport resize (rule 10) — debounced since resize fires
-// continuously while the user is actually dragging the window edge.
-let dashboardResizeTimer = null;
-window.addEventListener('resize', () => {
-  clearTimeout(dashboardResizeTimer);
-  dashboardResizeTimer = setTimeout(repackDashboard, 120);
-});
+function getDashboardTree() {
+  try {
+    const raw = JSON.parse(localStorage.getItem(DASHBOARD_TREE_KEY));
+    if (raw && (raw.type === 'leaf' || raw.type === 'split')) return raw;
+  } catch (err) {
+    /* fall through to null */
+  }
+  return null;
+}
 
-function initResizeHandle(panelEl) {
-  const handle = document.createElement('div');
-  handle.className = 'panel-resize-handle';
-  handle.title = 'Drag to resize (snaps to the grid on release; double-click to reset height)';
-  panelEl.appendChild(handle);
+function saveDashboardTree(tree) {
+  try {
+    localStorage.setItem(DASHBOARD_TREE_KEY, JSON.stringify(tree));
+  } catch (err) {
+    /* localStorage unavailable — layout just won't persist */
+  }
+}
 
-  handle.addEventListener('dblclick', (e) => {
-    e.preventDefault();
-    e.stopPropagation();
-    setDashboardGridState(panelEl.dataset.sortId, { heightPx: null });
-    repackDashboard();
+let dashboardTreeRoot = null;
+
+// ---------- Tree mutation (all pure — return a new/updated tree) ----------
+
+// Rebuilds the tree without the given leaf, collapsing any split left with
+// only one child (a split can't meaningfully exist with one side) and
+// renormalizing the remaining siblings' sizes back up to 100%.
+function removeLeafFromTree(node, id) {
+  if (!node) return null;
+  if (node.type === 'leaf') return node.id === id ? null : node;
+  const children = node.children
+    .map((c) => ({ size: c.size, node: removeLeafFromTree(c.node, id) }))
+    .filter((c) => c.node != null);
+  if (children.length === 0) return null;
+  if (children.length === 1) return children[0].node;
+  const total = children.reduce((s, c) => s + c.size, 0);
+  children.forEach((c) => {
+    c.size = total > 0 ? (c.size / total) * 100 : 100 / children.length;
   });
+  return { type: 'split', dir: node.dir, children };
+}
 
-  handle.addEventListener('pointerdown', (e) => {
+// Splits the target leaf in two, docking newId on the given side.
+function dockLeafInTree(node, targetId, newId, zone) {
+  if (node.type === 'leaf') {
+    if (node.id !== targetId) return node;
+    const dir = zone === 'left' || zone === 'right' ? 'row' : 'column';
+    const newLeaf = makeLeaf(newId);
+    const children =
+      zone === 'left' || zone === 'top'
+        ? [
+            { size: 50, node: newLeaf },
+            { size: 50, node }
+          ]
+        : [
+            { size: 50, node },
+            { size: 50, node: newLeaf }
+          ];
+    return { type: 'split', dir, children };
+  }
+  return { type: 'split', dir: node.dir, children: node.children.map((c) => ({ size: c.size, node: dockLeafInTree(c.node, targetId, newId, zone) })) };
+}
+
+// A measurement-free append, used only to fold an orphaned panel into the
+// tree before the very first render at page load (see init()) — dockNewLeaf
+// needs the workspace's real rendered geometry to find the "largest pane",
+// which doesn't exist yet before anything has painted, and reaching for it
+// there would force a second render right after the first (a real,
+// un-excused layout shift, since it happens before any user interaction).
+// Simply giving the orphan a fixed-size strip alongside the rest is a
+// perfectly fine one-time default — the user can always redock or resize it.
+function appendLeafToTree(root, newId) {
+  if (!root) return makeLeaf(newId);
+  return { type: 'split', dir: 'row', children: [{ size: 75, node: root }, { size: 25, node: makeLeaf(newId) }] };
+}
+
+// Moving an existing panel: center swaps the two leaves in place; any edge
+// zone removes the dragged panel from wherever it currently lives (the
+// gap closes via removeLeafFromTree's collapse) and docks it beside the
+// target instead.
+function moveLeafInTree(root, draggedId, targetId, zone) {
+  if (draggedId === targetId) return root;
+  if (zone === 'center') {
+    function swap(node) {
+      if (node.type === 'leaf') {
+        if (node.id === draggedId) return makeLeaf(targetId);
+        if (node.id === targetId) return makeLeaf(draggedId);
+        return node;
+      }
+      return { type: 'split', dir: node.dir, children: node.children.map((c) => ({ size: c.size, node: swap(c.node) })) };
+    }
+    return swap(root);
+  }
+  const withoutDragged = removeLeafFromTree(root, draggedId);
+  if (!withoutDragged) return root;
+  return dockLeafInTree(withoutDragged, targetId, draggedId, zone);
+}
+
+function findLeafArea(node, w, h) {
+  if (node.type === 'leaf') return [{ id: node.id, area: w * h }];
+  return node.children.flatMap((c) => {
+    const cw = node.dir === 'row' ? (w * c.size) / 100 : w;
+    const ch = node.dir === 'row' ? h : (h * c.size) / 100;
+    return findLeafArea(c.node, cw, ch);
+  });
+}
+
+// Where a brand-new panel (added via + Add Window) lands: split whichever
+// current leaf has the most on-screen area, so new content always goes
+// into the roomiest spot rather than cramming into something already small.
+function dockNewLeaf(newId, zone) {
+  const dashboardPanels = document.getElementById('dashboard-panels');
+  if (!dashboardTreeRoot) {
+    dashboardTreeRoot = makeLeaf(newId);
+  } else {
+    const rect = dashboardPanels ? dashboardPanels.getBoundingClientRect() : { width: 1600, height: 900 };
+    const areas = findLeafArea(dashboardTreeRoot, rect.width || 1600, rect.height || 900);
+    const largest = areas.reduce((best, a) => (!best || a.area > best.area ? a : best), null);
+    dashboardTreeRoot = largest ? dockLeafInTree(dashboardTreeRoot, largest.id, newId, zone || 'right') : makeLeaf(newId);
+  }
+  saveDashboardTree(dashboardTreeRoot);
+  renderDashboardTree();
+}
+
+function removePanelFromTree(id) {
+  dashboardTreeRoot = removeLeafFromTree(dashboardTreeRoot, id);
+  saveDashboardTree(dashboardTreeRoot);
+  panelElementRegistry.delete(id);
+  renderDashboardTree();
+}
+
+// ---------- Panel element registry ----------
+// The five core panels already exist in the DOM (index.html); dynamic
+// tiles (Live TV, standalone instruments/markets) register themselves when
+// built. Either way, the element is created exactly once and just moved
+// between tile-pane wrappers on every render — never recreated.
+const panelElementRegistry = new Map();
+
+function registerPanelElement(id, el) {
+  panelElementRegistry.set(id, el);
+}
+
+function getPanelElement(id) {
+  if (panelElementRegistry.has(id)) return panelElementRegistry.get(id);
+  const el = document.querySelector(`.dashboard-panel[data-sort-id="${id}"]`);
+  if (el) panelElementRegistry.set(id, el);
+  return el;
+}
+
+// ---------- Rendering ----------
+
+function renderDashboardTree() {
+  const root = document.getElementById('dashboard-panels');
+  if (!root) return;
+  root.innerHTML = '';
+  if (dashboardTreeRoot) renderTreeNode(dashboardTreeRoot, root);
+}
+
+// A pane's real minimum isn't the flat per-leaf constant — it's whatever
+// everything NESTED inside it cumulatively needs. A row-split's minimum
+// width is the SUM of its children's minimum widths (they sit side by
+// side); a column-split's minimum height is likewise the sum of its
+// children's minimum heights. Skipping this and just applying the flat
+// constant at every level let two deeply-nested min-width panes sum to
+// more than their shared ancestor's actual allocated space, which
+// flexbox has no way to know about — it doesn't propagate a nested
+// min-width up automatically, so the parent kept its percentage-based
+// share and the children silently overflowed past it into a sibling.
+function computeMinSize(node) {
+  if (node.type === 'leaf') return { w: PANE_MIN_PX.row, h: PANE_MIN_PX.column };
+  const mins = node.children.map((c) => computeMinSize(c.node));
+  if (node.dir === 'row') {
+    return { w: mins.reduce((s, m) => s + m.w, 0), h: Math.max(...mins.map((m) => m.h)) };
+  }
+  return { w: Math.max(...mins.map((m) => m.w)), h: mins.reduce((s, m) => s + m.h, 0) };
+}
+
+function renderTreeNode(node, container) {
+  if (node.type === 'leaf') {
+    const el = getPanelElement(node.id);
+    if (el) {
+      container.appendChild(el);
+      wirePanelDocking(el);
+    }
+    return;
+  }
+  container.classList.add('tile-split', node.dir === 'row' ? 'tile-row' : 'tile-column');
+  node.children.forEach((child, i) => {
+    const pane = document.createElement('div');
+    pane.className = 'tile-pane';
+    pane.style.flexBasis = `${child.size}%`;
+    const min = computeMinSize(child.node);
+    pane.style.minWidth = `${min.w}px`;
+    pane.style.minHeight = `${min.h}px`;
+    renderTreeNode(child.node, pane);
+    container.appendChild(pane);
+    if (i < node.children.length - 1) {
+      const divider = document.createElement('div');
+      divider.className = `tile-divider tile-divider-${node.dir}`;
+      attachDividerDrag(divider, node, i, container);
+      container.appendChild(divider);
+    }
+  });
+}
+
+// ---------- Divider drag-resize (moves the shared border, not one panel) ----------
+
+let activeGuideEls = [];
+function showGuide(pos, isVertical) {
+  clearGuides();
+  const ws = document.getElementById('dashboard-panels');
+  const rect = ws ? ws.getBoundingClientRect() : { left: 0, top: 0, width: window.innerWidth, height: window.innerHeight };
+  const guide = document.createElement('div');
+  guide.className = `tile-guide ${isVertical ? 'tile-guide-v' : 'tile-guide-h'}`;
+  if (isVertical) {
+    guide.style.left = `${pos}px`;
+    guide.style.top = `${rect.top}px`;
+    guide.style.height = `${rect.height}px`;
+  } else {
+    guide.style.top = `${pos}px`;
+    guide.style.left = `${rect.left}px`;
+    guide.style.width = `${rect.width}px`;
+  }
+  document.body.appendChild(guide);
+  activeGuideEls.push(guide);
+}
+function clearGuides() {
+  activeGuideEls.forEach((g) => g.remove());
+  activeGuideEls = [];
+}
+
+// Candidate lines to snap to: every OTHER divider on the same axis (the
+// dashboard's existing structural lines), every pane edge, and every pane
+// center — prioritizing existing dividers is what keeps long lines
+// continuous across the workspace as the spec calls for.
+function collectSnapCandidates(isRow, excludeEl) {
+  const positions = new Set();
+  document.querySelectorAll(isRow ? '.tile-divider-row' : '.tile-divider-column').forEach((d) => {
+    if (d === excludeEl) return;
+    const r = d.getBoundingClientRect();
+    positions.add(Math.round(isRow ? r.left : r.top));
+  });
+  document.querySelectorAll('.tile-pane').forEach((p) => {
+    const r = p.getBoundingClientRect();
+    if (isRow) {
+      positions.add(Math.round(r.left));
+      positions.add(Math.round(r.right));
+      positions.add(Math.round((r.left + r.right) / 2));
+    } else {
+      positions.add(Math.round(r.top));
+      positions.add(Math.round(r.bottom));
+      positions.add(Math.round((r.top + r.bottom) / 2));
+    }
+  });
+  return [...positions];
+}
+
+function attachDividerDrag(dividerEl, splitNode, i, splitContainerEl) {
+  dividerEl.addEventListener('pointerdown', (e) => {
     e.preventDefault();
-    e.stopPropagation();
-    const container = panelEl.parentElement;
-    const startX = e.clientX;
-    const startY = e.clientY;
-    const startRect = panelEl.getBoundingClientRect();
-    const containerWidth = container.getBoundingClientRect().width;
+    const isRow = splitNode.dir === 'row';
+    const containerRect = splitContainerEl.getBoundingClientRect();
+    const containerSize = isRow ? containerRect.width : containerRect.height;
+    const containerStart = isRow ? containerRect.left : containerRect.top;
+    const startPos = isRow ? e.clientX : e.clientY;
+    const childA = splitNode.children[i];
+    const childB = splitNode.children[i + 1];
+    const startA = childA.size;
+    const startB = childB.size;
+    const paneA = dividerEl.previousElementSibling;
+    const paneB = dividerEl.nextElementSibling;
+    // Each side's real minimum is whatever's cumulatively nested inside it
+    // (see computeMinSize) — not the flat per-leaf constant, for the same
+    // reason rendering computes it that way: a side holding a whole nested
+    // split needs at least the sum of ITS children's minimums, not just one
+    // leaf's worth.
+    const minPxA = isRow ? computeMinSize(childA.node).w : computeMinSize(childA.node).h;
+    const minPxB = isRow ? computeMinSize(childB.node).w : computeMinSize(childB.node).h;
+    const minPctA = Math.min(45, (minPxA / containerSize) * 100);
+    const minPctB = Math.min(45, (minPxB / containerSize) * 100);
 
-    panelEl.classList.add('resizing');
-    handle.setPointerCapture(e.pointerId);
+    dividerEl.classList.add('dragging');
+    dividerEl.setPointerCapture(e.pointerId);
+    let finalA = startA;
+    let finalB = startB;
 
-    // Live 1:1 pointer tracking during the drag itself (a raw pixel
-    // override of the calc()-driven width/height) — snapping to the grid
-    // and reflowing every other panel happens once on release, not on
-    // every pointermove, to keep the drag itself from feeling laggy.
     function onMove(ev) {
-      const w = Math.max(120, startRect.width + (ev.clientX - startX));
-      const h = Math.max(GRID_HEIGHT_MIN, startRect.height + (ev.clientY - startY));
-      panelEl.style.width = `${w}px`;
-      panelEl.style.height = `${h}px`;
+      const pos = isRow ? ev.clientX : ev.clientY;
+      const deltaPct = ((pos - startPos) / containerSize) * 100;
+      let newA = startA + deltaPct;
+      let newB = startB - deltaPct;
+      if (newA < minPctA) {
+        newB -= minPctA - newA;
+        newA = minPctA;
+      }
+      if (newB < minPctB) {
+        newA -= minPctB - newB;
+        newB = minPctB;
+      }
+
+      let dividerAbsPos = containerStart + (newA / 100) * containerSize;
+      const candidates = collectSnapCandidates(isRow, dividerEl);
+      let snapTo = null;
+      let bestDist = SNAP_THRESHOLD_PX;
+      candidates.forEach((c) => {
+        const d = Math.abs(c - dividerAbsPos);
+        if (d < bestDist) {
+          bestDist = d;
+          snapTo = c;
+        }
+      });
+      if (snapTo != null) {
+        const snappedPct = ((snapTo - containerStart) / containerSize) * 100;
+        if (snappedPct >= minPctA && startA + startB - snappedPct >= minPctB) {
+          newA = snappedPct;
+          newB = startA + startB - newA;
+          showGuide(snapTo, isRow);
+        }
+      } else {
+        clearGuides();
+      }
+
+      paneA.style.flexBasis = `${newA}%`;
+      paneB.style.flexBasis = `${newB}%`;
+      finalA = newA;
+      finalB = newB;
     }
     function onUp() {
-      handle.releasePointerCapture(e.pointerId);
-      handle.removeEventListener('pointermove', onMove);
-      handle.removeEventListener('pointerup', onUp);
-      panelEl.classList.remove('resizing');
-
-      const totalCols = getResponsiveColCount();
-      const finalRect = panelEl.getBoundingClientRect();
-      const colUnit = containerWidth / totalCols;
-      const span = Math.max(
-        minColSpanFor(panelEl, totalCols),
-        Math.min(totalCols, Math.round(finalRect.width / colUnit))
-      );
-      setDashboardGridState(panelEl.dataset.sortId, {
-        colFraction: span / totalCols,
-        heightPx: Math.round(finalRect.height)
-      });
-      repackDashboard();
+      dividerEl.releasePointerCapture(e.pointerId);
+      dividerEl.removeEventListener('pointermove', onMove);
+      dividerEl.removeEventListener('pointerup', onUp);
+      dividerEl.classList.remove('dragging');
+      clearGuides();
+      childA.size = finalA;
+      childB.size = finalB;
+      saveDashboardTree(dashboardTreeRoot);
     }
-    handle.addEventListener('pointermove', onMove);
-    handle.addEventListener('pointerup', onUp);
+    dividerEl.addEventListener('pointermove', onMove);
+    dividerEl.addEventListener('pointerup', onUp);
+  });
+}
+
+// ---------- Panel move/dock (drag a panel's header onto another panel) ----------
+
+let draggingPanelId = null;
+let dockOverlayEl = null;
+let dockOverlayForPanel = null;
+let currentDockZone = null;
+
+function showDockOverlay(panelEl, clientX, clientY) {
+  if (dockOverlayForPanel !== panelEl) {
+    clearDockOverlay();
+    dockOverlayEl = document.createElement('div');
+    dockOverlayEl.className = 'tile-dock-overlay';
+    ['top', 'left', 'center', 'right', 'bottom'].forEach((z) => {
+      const zoneEl = document.createElement('div');
+      zoneEl.className = `tile-dock-zone tile-dock-zone-${z}`;
+      zoneEl.dataset.zone = z;
+      dockOverlayEl.appendChild(zoneEl);
+    });
+    panelEl.appendChild(dockOverlayEl);
+    dockOverlayForPanel = panelEl;
+  }
+  const r = panelEl.getBoundingClientRect();
+  const relX = (clientX - r.left) / r.width;
+  const relY = (clientY - r.top) / r.height;
+  let zone;
+  if (relX < 0.25) zone = 'left';
+  else if (relX > 0.75) zone = 'right';
+  else if (relY < 0.25) zone = 'top';
+  else if (relY > 0.75) zone = 'bottom';
+  else zone = 'center';
+  currentDockZone = zone;
+  dockOverlayEl.querySelectorAll('.tile-dock-zone').forEach((z) => z.classList.toggle('active', z.dataset.zone === zone));
+}
+
+function clearDockOverlay() {
+  if (dockOverlayEl) dockOverlayEl.remove();
+  dockOverlayEl = null;
+  dockOverlayForPanel = null;
+  currentDockZone = null;
+}
+
+// Attached once per panel element (idempotent — render() reuses the same
+// element on every re-render, and re-wiring would just stack duplicate
+// listeners).
+function wirePanelDocking(panelEl) {
+  if (panelEl.dataset.dockWired) return;
+  panelEl.dataset.dockWired = 'true';
+
+  const handle = panelEl.querySelector('.panel-drag-handle');
+  if (!handle) return;
+
+  handle.addEventListener('dragstart', (e) => {
+    e.dataTransfer.effectAllowed = 'move';
+    try {
+      e.dataTransfer.setData('text/plain', panelEl.dataset.sortId || '');
+    } catch (err) {
+      /* Safari sometimes throws on setData with certain MIME types — harmless to skip */
+    }
+    draggingPanelId = panelEl.dataset.sortId;
+    panelEl.classList.add('tile-drag-source');
+  });
+  handle.addEventListener('dragend', () => {
+    panelEl.classList.remove('tile-drag-source');
+    draggingPanelId = null;
+    clearDockOverlay();
+  });
+
+  panelEl.addEventListener('dragover', (e) => {
+    if (!draggingPanelId || draggingPanelId === panelEl.dataset.sortId) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    showDockOverlay(panelEl, e.clientX, e.clientY);
+  });
+  panelEl.addEventListener('dragleave', (e) => {
+    if (dockOverlayForPanel === panelEl && !panelEl.contains(e.relatedTarget)) clearDockOverlay();
+  });
+  panelEl.addEventListener('drop', (e) => {
+    e.preventDefault();
+    const zone = currentDockZone;
+    const targetId = panelEl.dataset.sortId;
+    clearDockOverlay();
+    if (draggingPanelId && draggingPanelId !== targetId && zone) {
+      dashboardTreeRoot = moveLeafInTree(dashboardTreeRoot, draggingPanelId, targetId, zone);
+      saveDashboardTree(dashboardTreeRoot);
+      renderDashboardTree();
+    }
+    draggingPanelId = null;
   });
 }
 
@@ -1014,9 +1187,7 @@ function closeCorePanel(id) {
   const list = getClosedPanels();
   if (!list.includes(id)) list.push(id);
   saveClosedPanels(list);
-  const section = document.querySelector(`.dashboard-panel[data-sort-id="${id}"]`);
-  if (section) section.remove();
-  repackDashboard();
+  removePanelFromTree(id);
 }
 
 // Restoring rebuilds via a reload (same approach as switching layouts) —
@@ -1242,7 +1413,6 @@ function createTickerBucket(storageKey, gridId) {
     const grid = document.getElementById(gridId);
     const card = [...grid.children].find((c) => c.dataset.sortId === symbol);
     if (card) card.remove();
-    repackDashboard();
   }
 
   function renderItem(item) {
@@ -1265,7 +1435,6 @@ function createTickerBucket(storageKey, gridId) {
     list.push(item);
     saveList(list);
     renderItem(item);
-    repackDashboard();
   }
 
   function renderSaved() {
@@ -1428,7 +1597,6 @@ function addMarketToDom(market) {
   applySavedOrder(entry.card.parentElement, sortKeyFor(entry.card.parentElement));
   buildIndexTickers(market, entry.card);
   updateCounts();
-  repackDashboard();
 }
 
 // Handles both pools: a default exchange the user removed earlier just gets
@@ -1466,7 +1634,6 @@ function removeMarket(marketId) {
   const idx = statusEls.indexOf(entry);
   if (idx !== -1) statusEls.splice(idx, 1);
   updateCounts();
-  repackDashboard();
 }
 
 function initMarketsSearch() {
@@ -1632,21 +1799,17 @@ function buildLiveTvPanel(tileId, initialSourceId) {
   section.querySelector('[data-role="remove"]').addEventListener('click', (e) => {
     e.stopPropagation();
     clearInterval(refreshTimer);
-    section.remove();
+    removePanelFromTree(tileId);
     saveLiveTvTiles();
-    repackDashboard();
   });
 
   setSource(initialSourceId);
-  initResizeHandle(section);
   return section;
 }
 
 function initLiveTv() {
-  const dashboardPanels = document.getElementById('dashboard-panels');
-  if (!dashboardPanels) return;
   getLiveTvTiles().forEach((tile) => {
-    dashboardPanels.appendChild(buildLiveTvPanel(tile.id, tile.sourceId));
+    registerPanelElement(tile.id, buildLiveTvPanel(tile.id, tile.sourceId));
   });
 }
 
@@ -1692,7 +1855,7 @@ function newTileId() {
   return `tile-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
 }
 
-function createStandaloneInstrumentTile(item, dashboardPanels, addTileEl, existingId) {
+function createStandaloneInstrumentTile(item, existingId) {
   const id = existingId || newTileId();
   const section = document.createElement('section');
   section.className = 'dashboard-panel';
@@ -1707,29 +1870,29 @@ function createStandaloneInstrumentTile(item, dashboardPanels, addTileEl, existi
     </div>
     <div class="index-card panel-body" data-role="slot"></div>
   `;
-  dashboardPanels.insertBefore(section, addTileEl);
+  registerPanelElement(id, section);
 
   const slot = section.querySelector('[data-role="slot"]');
   const panel = new IndexPanel(slot, item.symbol, item.name);
   panels.push(panel);
   panel.load();
-  initResizeHandle(section);
 
   section.querySelector('[data-role="remove"]').addEventListener('click', (e) => {
     e.stopPropagation();
     const idx = panels.indexOf(panel);
     if (idx !== -1) panels.splice(idx, 1);
     panel.destroy();
-    section.remove();
     removeStandaloneTileRecord(id);
-    repackDashboard();
+    removePanelFromTree(id);
   });
 
-  if (!existingId) addStandaloneTileRecord({ id, kind: 'ticker', symbol: item.symbol, name: item.name });
-  repackDashboard();
+  if (!existingId) {
+    addStandaloneTileRecord({ id, kind: 'ticker', symbol: item.symbol, name: item.name });
+    dockNewLeaf(id);
+  }
 }
 
-function createStandaloneMarketTile(market, dashboardPanels, addTileEl, existingId) {
+function createStandaloneMarketTile(market, existingId) {
   const id = existingId || newTileId();
   const section = document.createElement('section');
   section.className = 'dashboard-panel';
@@ -1744,13 +1907,12 @@ function createStandaloneMarketTile(market, dashboardPanels, addTileEl, existing
     </div>
     <div class="panel-body" data-role="body"></div>
   `;
-  dashboardPanels.insertBefore(section, addTileEl);
+  registerPanelElement(id, section);
 
   const entry = buildMarketCard(market, false);
   entry.autoGroup = false; // lives in its own window — tickStatuses() shouldn't relocate it into Open/Closed
   section.querySelector('[data-role="body"]').appendChild(entry.card);
   buildIndexPanels(market, entry.card);
-  initResizeHandle(section);
 
   section.querySelector('[data-role="remove"]').addEventListener('click', (e) => {
     e.stopPropagation();
@@ -1762,13 +1924,14 @@ function createStandaloneMarketTile(market, dashboardPanels, addTileEl, existing
     }
     const si = statusEls.indexOf(entry);
     if (si !== -1) statusEls.splice(si, 1);
-    section.remove();
     removeStandaloneTileRecord(id);
-    repackDashboard();
+    removePanelFromTree(id);
   });
 
-  if (!existingId) addStandaloneTileRecord({ id, kind: 'market', marketId: market.id });
-  repackDashboard();
+  if (!existingId) {
+    addStandaloneTileRecord({ id, kind: 'market', marketId: market.id });
+    dockNewLeaf(id);
+  }
 }
 
 function openInlineSearchPopover(anchorEl, { placeholder, search, onSelect }) {
@@ -1850,22 +2013,9 @@ function searchMarketsPool(q) {
 }
 
 function initAddWindowMenu() {
-  const dashboardPanels = document.getElementById('dashboard-panels');
-  if (!dashboardPanels) return;
+  const tile = document.getElementById('add-panel-tile');
+  if (!tile) return;
 
-  const tile = document.createElement('div');
-  tile.className = 'dashboard-panel add-panel-tile';
-  tile.innerHTML = `
-    <span class="add-panel-plus">+</span><span>Add Window</span>
-    <div class="add-window-menu hidden" data-role="menu">
-      <button type="button" data-type="livetv">📺 Live TV</button>
-      <button type="button" data-type="ticker">📈 Stock / Ticker</button>
-      <button type="button" data-type="commodity">🛢️ Commodity</button>
-      <button type="button" data-type="bond">🏦 Bond</button>
-      <button type="button" data-type="market">🌍 Market</button>
-      <div data-role="restore-slot"></div>
-    </div>
-  `;
   const menu = tile.querySelector('[data-role="menu"]');
   const restoreSlot = menu.querySelector('[data-role="restore-slot"]');
 
@@ -1904,10 +2054,10 @@ function initAddWindowMenu() {
       const type = btn.dataset.type;
 
       if (type === 'livetv') {
-        const newTile = buildLiveTvPanel(newTileId(), LIVETV_SOURCES[0].id);
-        dashboardPanels.insertBefore(newTile, tile);
+        const newId = newTileId();
+        registerPanelElement(newId, buildLiveTvPanel(newId, LIVETV_SOURCES[0].id));
         saveLiveTvTiles();
-        repackDashboard();
+        dockNewLeaf(newId);
         return;
       }
 
@@ -1915,7 +2065,7 @@ function initAddWindowMenu() {
         openInlineSearchPopover(tile, {
           placeholder: 'Search any exchange…',
           search: searchMarketsPool,
-          onSelect: (item) => createStandaloneMarketTile(item._market, dashboardPanels, tile)
+          onSelect: (item) => createStandaloneMarketTile(item._market)
         });
         return;
       }
@@ -1923,7 +2073,7 @@ function initAddWindowMenu() {
       openInlineSearchPopover(tile, {
         placeholder: `Search ${searchLabels[type]}`,
         search: (q) => tickerSearch(q, type === 'ticker' ? undefined : type),
-        onSelect: (item) => createStandaloneInstrumentTile(item, dashboardPanels, tile)
+        onSelect: (item) => createStandaloneInstrumentTile(item)
       });
     });
   });
@@ -1932,10 +2082,6 @@ function initAddWindowMenu() {
     if (!tile.contains(e.target)) menu.classList.add('hidden');
   });
 
-  // The "+" tile must be attached before rebuilding saved standalone tiles —
-  // insertBefore(node, tile) requires `tile` to already be a child.
-  dashboardPanels.appendChild(tile);
-
   const marketsPool = [
     ...((window.__BOOTSTRAP__ && window.__BOOTSTRAP__.markets) || []),
     ...((window.__BOOTSTRAP__ && window.__BOOTSTRAP__.marketsExtra) || [])
@@ -1943,13 +2089,11 @@ function initAddWindowMenu() {
   getStandaloneTiles().forEach((rec) => {
     if (rec.kind === 'market') {
       const market = marketsPool.find((m) => m.id === rec.marketId);
-      if (market) createStandaloneMarketTile(market, dashboardPanels, tile, rec.id);
+      if (market) createStandaloneMarketTile(market, rec.id);
     } else {
-      createStandaloneInstrumentTile({ symbol: rec.symbol, name: rec.name }, dashboardPanels, tile, rec.id);
+      createStandaloneInstrumentTile({ symbol: rec.symbol, name: rec.name }, rec.id);
     }
   });
-
-  return tile;
 }
 
 // ---------- Detail modal (double-click any instrument tile) ----------
@@ -2092,7 +2236,7 @@ const LAYOUT_STATE_KEYS = [
   CORE_MARKETS_REMOVED_KEY,
   'livetv:tiles',
   STANDALONE_TILES_KEY,
-  DASHBOARD_GRID_KEY,
+  DASHBOARD_TREE_KEY,
   CLOSED_PANELS_KEY
 ];
 
@@ -2305,6 +2449,58 @@ async function init() {
   });
   initClosePanelButtons();
 
+  // Live TV and any restored standalone instrument/market tiles don't
+  // depend on the core panels' own content below — build them now so
+  // every panel (core AND dynamic) is fully built, charts included,
+  // before the tiling tree ever renders. That matters more than it looks:
+  // rendering the tree twice (build once, then fold a late-created panel
+  // in and render again) was re-parenting every OTHER panel a second time
+  // even when its size never changed, and that reparenting alone — not a
+  // width mismatch — was enough to disrupt each chart's internal canvas
+  // and produce a real, measured CLS regression. One render, after
+  // everything exists, has nothing left to redundantly reparent.
+  initLiveTv();
+  initAddWindowMenu();
+
+  function pruneMissingLeaves(node) {
+    if (!node) return null;
+    if (node.type === 'leaf') return getPanelElement(node.id) ? node : null;
+    const children = node.children.map((c) => ({ size: c.size, node: pruneMissingLeaves(c.node) })).filter((c) => c.node);
+    if (children.length === 0) return null;
+    if (children.length === 1) return children[0].node;
+    const total = children.reduce((s, c) => s + c.size, 0);
+    children.forEach((c) => {
+      c.size = total > 0 ? (c.size / total) * 100 : 100 / children.length;
+    });
+    return { type: 'split', dir: node.dir, children };
+  }
+  function treeHasLeaf(node, id) {
+    if (!node) return false;
+    if (node.type === 'leaf') return node.id === id;
+    return node.children.some((c) => treeHasLeaf(c.node, id));
+  }
+
+  CORE_PANELS.forEach((p) => getPanelElement(p.id));
+  dashboardTreeRoot = pruneMissingLeaves(getDashboardTree() || defaultDashboardTree());
+  if (!dashboardTreeRoot) {
+    const firstId = [...panelElementRegistry.keys()][0];
+    dashboardTreeRoot = firstId ? makeLeaf(firstId) : null;
+  }
+  // Fold in every panel that's actually been built (Live TV/standalone
+  // tiles included, now that they're built above) but that the loaded —
+  // or default — tree doesn't mention yet.
+  [...panelElementRegistry.keys()].forEach((id) => {
+    if (!treeHasLeaf(dashboardTreeRoot, id)) dashboardTreeRoot = appendLeafToTree(dashboardTreeRoot, id);
+  });
+  saveDashboardTree(dashboardTreeRoot);
+  renderDashboardTree();
+  // Live TV/standalone tiles built their charts above while still fully
+  // detached from the document (nothing to attach them TO yet, before this
+  // first render) — lightweight-charts measures 0 width in that state.
+  // Sync them to their real size now that they've actually been placed,
+  // rather than waiting on each one's own ResizeObserver to notice.
+  panels.forEach((p) => p.syncSize && p.syncSize());
+
   if (!closedIds.has('fx')) initFx();
   const main = closedIds.has('markets') ? null : document.getElementById('markets-main');
   try {
@@ -2396,44 +2592,15 @@ async function init() {
         onSelect: (item) => watchlistBucket.addItem({ symbol: item.symbol, name: item.name })
       });
     }
-    initLiveTv();
-    const addWindowBtn = initAddWindowMenu();
-
-    // Dashboard-level reordering (drag a panel by its grip handle) — order
-    // is priority for the packer (repackDashboard), not a visual position
-    // by itself. The "+" add-window ghost must always stay last —
-    // applySavedOrder moves saved-order panels to the end in sequence,
-    // which would otherwise shuffle it out of trailing position, so re-pin
-    // it after (repackDashboard also excludes it from packing and parks it
-    // in its own slot regardless of DOM position, but keeping it last here
-    // keeps makeSortable's nearest-neighbor drop targeting well-behaved).
-    const dashboardPanels = document.getElementById('dashboard-panels');
-    [...dashboardPanels.querySelectorAll('.dashboard-panel[data-sort-id]')].forEach((p) => {
-      // Standalone tiles and Live TV tiles already got initResizeHandle
-      // called when they were built.
-      if (!p.dataset.livetvTile && !p.dataset.standaloneTile) initResizeHandle(p);
-    });
-    applySavedOrder(dashboardPanels, sortKeyFor(dashboardPanels));
-    if (addWindowBtn) dashboardPanels.appendChild(addWindowBtn);
-    repackDashboard();
-    makeSortable(dashboardPanels, sortKeyFor(dashboardPanels), {
-      handleSelector: '.panel-drag-handle',
-      afterReorder: () => {
-        if (addWindowBtn) dashboardPanels.appendChild(addWindowBtn);
-        repackDashboard();
-      }
-    });
+    // Live TV, standalone tiles, and the tiling tree's one-and-only render
+    // already happened above (before this try block) — everything from
+    // here down is just filling already-correctly-positioned containers
+    // with content, not moving anything again.
 
     // Refresh live prices/charts/FX as often as the free API comfortably allows
     // (backend caches responses for ~20s, so this stays close to real-time).
     // The logo flicker and API health log below it are driven by this same cycle.
     await refreshAll();
-    // The very first repack (above) ran while every card still showed
-    // placeholder "—" text — real prices/changes can wrap onto a different
-    // number of lines once they land (very visible on narrow widths), which
-    // silently grew several panels past the height that repack had already
-    // locked in. Repack once more now that real content has actually loaded.
-    repackDashboard();
     setInterval(refreshAll, 20000);
   } catch (err) {
     if (main) main.innerHTML = `<p class="loading">Failed to load market data: ${err.message}</p>`;
