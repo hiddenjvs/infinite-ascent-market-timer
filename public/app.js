@@ -781,6 +781,23 @@ function panelColSpan(el, totalCols, state) {
 function repackDashboard() {
   const dashboardPanels = document.getElementById('dashboard-panels');
   if (!dashboardPanels) return;
+  try {
+    repackDashboardInner(dashboardPanels);
+  } catch (err) {
+    // Every interactive action (add/remove/resize/reorder a panel) ends
+    // with a repack call — if this function throws, the caller's own work
+    // (a tile getting inserted, a search result being selected, etc.) had
+    // already happened, but the *visible* result would silently never
+    // appear, reading to the user as "nothing happened when I clicked
+    // that." Surface it instead of swallowing it, and don't let it take
+    // down whatever called us.
+    console.error('repackDashboard failed:', err);
+  } finally {
+    dashboardPanels.classList.remove('grid-measuring');
+  }
+}
+
+function repackDashboardInner(dashboardPanels) {
   const addTile = dashboardPanels.querySelector('.add-panel-tile');
   const panelEls = [...dashboardPanels.querySelectorAll('.dashboard-panel[data-sort-id]')];
   const totalCols = getResponsiveColCount();
