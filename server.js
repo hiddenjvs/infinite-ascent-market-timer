@@ -146,46 +146,41 @@ app.get('/api/livetv/:channel', async (req, res) => {
     if (!r.ok) throw new Error(`YouTube responded ${r.status}`);
     const html = await r.text();
 
-    // The page's markup varies by template (classic vs. a newer
-    // WIZ-framework render — same code, different response depending on
-    // the requester's IP reputation, apparently) and neither the canonical
-    // link tag nor Open Graph meta tags are reliably present or correct —
-    // on the WIZ template the canonical tag's href is literally the string
-    // "undefined" (a bug in that template itself). Worse, a bare "first
-    // videoId in the page" search is NOT reliably the live video either:
-    // decoy/ad/recommended video references are scattered throughout, and
-    // which one sorts first shifts between requests as ad content rotates
-    // — it worked in earlier spot checks by coincidence, then silently
-    // served Bloomberg and CNBC's tabs someone else's video in production.
-    //
-    // The one thing that's structurally guaranteed regardless of template
-    // or ad rotation: the target channel's OWN id and its live video's id
-    // appear near each other in the same metadata object, while decoy
-    // videos belong to (and are annotated with) other channels. Anchor on
-    // "channelId":"<the id we asked for>" and take the nearest videoId to
-    // it — that ties the result to the actual channel requested instead of
-    // trusting page position.
-    let videoId = null;
-    const channelIdx = html.indexOf(`"channelId":"${channel}"`);
-    if (channelIdx !== -1) {
-      const windowStart = Math.max(0, channelIdx - 2000);
-      const windowEnd = Math.min(html.length, channelIdx + 2000);
-      const nearby = html.slice(windowStart, windowEnd);
-      const nearMatch = nearby.match(/"videoId":"([A-Za-z0-9_-]{11})"/);
-      if (nearMatch) videoId = nearMatch[1];
+    // channelId-proximity turned out to still be wrong for CNBC in
+    // production (confirmed via a fresh, non-cached lookup) — "channelId"
+    // is apparently too generic a field name and shows up near unrelated
+    // video references too (subscribe widgets, avatar refs, etc.), not
+    // just the primary video's own metadata. Gathering multiple candidate
+    // strategies at once here rather than guessing-and-redeploying again,
+    // since each round trip through Render's deploy has been 10-20+ minutes.
+    function nearestVideoId(idx, windowSize = 2000) {
+      if (idx === -1) return null;
+      const nearby = html.slice(Math.max(0, idx - windowSize), idx + windowSize);
+      const m = nearby.match(/"videoId":"([A-Za-z0-9_-]{11})"/);
+      return m ? m[1] : null;
     }
-    if (!videoId) {
-      // Fallback for whatever template comes next, or if the channel id
-      // genuinely isn't findable this way.
-      const canonical = html.match(/<link rel="canonical" href="https:\/\/www\.youtube\.com\/watch\?v=([A-Za-z0-9_-]{11})"/);
-      const bare = html.match(/"videoId":"([A-Za-z0-9_-]{11})"/);
-      videoId = (canonical && canonical[1]) || (bare && bare[1]) || null;
-    }
-    if (!videoId) throw new Error('No live video found for this channel');
+    const candidates = {
+      videoOwnerChannelId: nearestVideoId(html.indexOf(`"videoOwnerChannelId":"${channel}"`)),
+      externalChannelId: nearestVideoId(html.indexOf(`"externalChannelId":"${channel}"`)),
+      channelIdFirst: nearestVideoId(html.indexOf(`"channelId":"${channel}"`)),
+      channelIdLast: nearestVideoId(html.lastIndexOf(`"channelId":"${channel}"`)),
+      classicVideoDetails: (html.match(/"videoDetails":\{"videoId":"([A-Za-z0-9_-]{11})"/) || [])[1] || null,
+      bareFirst: (html.match(/"videoId":"([A-Za-z0-9_-]{11})"/) || [])[1] || null
+    };
+    const channelIdCount = (html.match(new RegExp(`"channelId":"${channel}"`, 'g')) || []).length;
 
     if (req.query.debug) {
-      return res.json({ videoId, usedChannelAnchor: channelIdx !== -1, length: html.length });
+      return res.json({ candidates, channelIdCount, length: html.length });
     }
+
+    const videoId =
+      candidates.videoOwnerChannelId ||
+      candidates.externalChannelId ||
+      candidates.classicVideoDetails ||
+      candidates.channelIdFirst ||
+      candidates.bareFirst ||
+      null;
+    if (!videoId) throw new Error('No live video found for this channel');
 
     const data = { videoId };
     livetvCache.set(channel, { at: Date.now(), data });
