@@ -732,14 +732,21 @@ function getResponsiveColCount() {
 // primary analytical content and default to full width; an individual
 // standalone instrument/market tile or a Live TV feed is secondary
 // added-on content and defaults to a third of the width.
-// Every panel defaults to the same size (half width, so a pair packs side
-// by side) rather than a mixed full/half/third scheme — a uniform grid of
-// same-sized windows reads cleaner than a hierarchy of different widths.
-// The FX matrix's own minimum-width floor (see minColSpanFor) still applies
-// on top of this if the user tries to manually shrink it further — that's
-// a hard legibility constraint, not a sizing preference.
-function defaultColFractionFor() {
-  return 1 / 2;
+// Every panel defaults to the same half-width size (so a pair packs side by
+// side) — a uniform grid of same-sized windows reads cleaner than a
+// hierarchy of different widths — with one deliberate exception: Markets
+// holds roughly 3-5x as many rows of content as any other single panel (11
+// exchanges x 2 indexes each vs. a handful of commodities/bonds/tickers).
+// Forcing it into a half-width column made it far shorter than the combined
+// height of every other panel stacked in the other column, leaving a large
+// empty gap at the bottom of the Markets side — full width lets it spread
+// across twice as many cards per row instead, which is what actually closes
+// that gap rather than just moving it around. The FX matrix's own
+// minimum-width floor (see minColSpanFor) still applies on top of this if
+// the user tries to manually shrink it further — that's a hard legibility
+// constraint, not a sizing preference.
+function defaultColFractionFor(el) {
+  return el.dataset.sortId === 'markets' ? 1 : 1 / 2;
 }
 
 // Minimum usable size (rule 8) — the FX cross-rate matrix is a dense 13x13
@@ -814,10 +821,23 @@ function repackDashboardInner(dashboardPanels) {
 
   // Pass 1: commit width first — natural content height (measured next)
   // needs to reflow against its real width, not whatever it had before.
+  // Also clear any explicit height left over from an earlier repack on
+  // panels using natural sizing: .panel-body has overflow-y:auto (so a
+  // manually-resized panel can scroll its own overflow), which means once
+  // a panel has ANY explicit height, that overflow is absorbed internally
+  // and never bubbles up — el.scrollHeight then just echoes the SAME old
+  // height back forever, regardless of how much taller the real content
+  // has since grown (e.g. once real prices replace "—" placeholders after
+  // the initial load, or a search-added card is appended). Height has to
+  // come off before measuring, or growth silently stops after one repack.
   panelEls.forEach((el) => {
     const span = panelColSpan(el, totalCols, state);
     el.dataset.gridColSpan = span;
     el.style.width = colWidthCalc(totalCols, span);
+
+    const saved = state[el.dataset.sortId];
+    const hasManualHeight = saved && sanitizePositiveNumber(saved.heightPx) != null;
+    if (!hasManualHeight) el.style.height = 'auto';
   });
 
   // Pass 2: measure natural height, then place with a shortest-column scan
@@ -2378,6 +2398,12 @@ async function init() {
     // (backend caches responses for ~20s, so this stays close to real-time).
     // The logo flicker and API health log below it are driven by this same cycle.
     await refreshAll();
+    // The very first repack (above) ran while every card still showed
+    // placeholder "—" text — real prices/changes can wrap onto a different
+    // number of lines once they land (very visible on narrow widths), which
+    // silently grew several panels past the height that repack had already
+    // locked in. Repack once more now that real content has actually loaded.
+    repackDashboard();
     setInterval(refreshAll, 20000);
   } catch (err) {
     if (main) main.innerHTML = `<p class="loading">Failed to load market data: ${err.message}</p>`;
