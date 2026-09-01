@@ -555,7 +555,10 @@ function tickStatuses() {
     }
   });
 
-  if (groupsChanged) updateCounts();
+  if (groupsChanged) {
+    updateCounts();
+    repackDashboard();
+  }
 }
 setInterval(tickStatuses, 1000);
 
@@ -1193,6 +1196,7 @@ function createTickerBucket(storageKey, gridId) {
     const grid = document.getElementById(gridId);
     const card = [...grid.children].find((c) => c.dataset.sortId === symbol);
     if (card) card.remove();
+    repackDashboard();
   }
 
   function renderItem(item) {
@@ -1215,6 +1219,7 @@ function createTickerBucket(storageKey, gridId) {
     list.push(item);
     saveList(list);
     renderItem(item);
+    repackDashboard();
   }
 
   function renderSaved() {
@@ -1377,6 +1382,7 @@ function addMarketToDom(market) {
   applySavedOrder(entry.card.parentElement, sortKeyFor(entry.card.parentElement));
   buildIndexTickers(market, entry.card);
   updateCounts();
+  repackDashboard();
 }
 
 // Handles both pools: a default exchange the user removed earlier just gets
@@ -1414,6 +1420,7 @@ function removeMarket(marketId) {
   const idx = statusEls.indexOf(entry);
   if (idx !== -1) statusEls.splice(idx, 1);
   updateCounts();
+  repackDashboard();
 }
 
 function initMarketsSearch() {
