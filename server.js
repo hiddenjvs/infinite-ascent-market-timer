@@ -141,48 +141,35 @@ app.get('/api/livetv/:channel', async (req, res) => {
   }
 
   try {
-    const url = `https://www.youtube.com/channel/${encodeURIComponent(channel)}/live`;
-    const r = await fetch(url, { headers: YOUTUBE_HEADERS });
+    // Scraping the /live page's HTML turned out to be fundamentally
+    // unreliable: which template YouTube serves (and which embedded JSON
+    // fields are even present) varies by requester IP, and every regex/
+    // proximity heuristic tried against it was wrong for at least one
+    // channel in production even though it worked locally. Use YouTube's
+    // own internal "resolve URL" API instead — the same one youtube.com's
+    // web client calls to figure out what a given URL points to — which
+    // returns clean structured JSON instead of a page to scrape. The API
+    // key below isn't a secret credential; it's YouTube's public web-client
+    // key, hardcoded into every youtube.com page load and used openly by
+    // this exact technique in other open-source YouTube tooling.
+    const liveUrl = `https://www.youtube.com/channel/${encodeURIComponent(channel)}/live`;
+    const r = await fetch(
+      'https://www.youtube.com/youtubei/v1/navigation/resolve_url?key=AIzaSyAO_FJ2SlqU8Q4STEHLGCilw_Y9_11qcW8',
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'User-Agent': YOUTUBE_HEADERS['User-Agent'] },
+        body: JSON.stringify({
+          context: { client: { clientName: 'WEB', clientVersion: '2.20240101.00.00' } },
+          url: liveUrl
+        })
+      }
+    );
     if (!r.ok) throw new Error(`YouTube responded ${r.status}`);
-    const html = await r.text();
+    const json = await r.json();
+    const match = JSON.stringify(json).match(/"videoId":"([A-Za-z0-9_-]{11})"/);
+    if (!match) throw new Error('No live video found for this channel');
 
-    // channelId-proximity turned out to still be wrong for CNBC in
-    // production (confirmed via a fresh, non-cached lookup) — "channelId"
-    // is apparently too generic a field name and shows up near unrelated
-    // video references too (subscribe widgets, avatar refs, etc.), not
-    // just the primary video's own metadata. Gathering multiple candidate
-    // strategies at once here rather than guessing-and-redeploying again,
-    // since each round trip through Render's deploy has been 10-20+ minutes.
-    function nearestVideoId(idx, windowSize = 2000) {
-      if (idx === -1) return null;
-      const nearby = html.slice(Math.max(0, idx - windowSize), idx + windowSize);
-      const m = nearby.match(/"videoId":"([A-Za-z0-9_-]{11})"/);
-      return m ? m[1] : null;
-    }
-    const candidates = {
-      videoOwnerChannelId: nearestVideoId(html.indexOf(`"videoOwnerChannelId":"${channel}"`)),
-      externalChannelId: nearestVideoId(html.indexOf(`"externalChannelId":"${channel}"`)),
-      channelIdFirst: nearestVideoId(html.indexOf(`"channelId":"${channel}"`)),
-      channelIdLast: nearestVideoId(html.lastIndexOf(`"channelId":"${channel}"`)),
-      classicVideoDetails: (html.match(/"videoDetails":\{"videoId":"([A-Za-z0-9_-]{11})"/) || [])[1] || null,
-      bareFirst: (html.match(/"videoId":"([A-Za-z0-9_-]{11})"/) || [])[1] || null
-    };
-    const channelIdCount = (html.match(new RegExp(`"channelId":"${channel}"`, 'g')) || []).length;
-
-    if (req.query.debug) {
-      return res.json({ candidates, channelIdCount, length: html.length });
-    }
-
-    const videoId =
-      candidates.videoOwnerChannelId ||
-      candidates.externalChannelId ||
-      candidates.classicVideoDetails ||
-      candidates.channelIdFirst ||
-      candidates.bareFirst ||
-      null;
-    if (!videoId) throw new Error('No live video found for this channel');
-
-    const data = { videoId };
+    const data = { videoId: match[1] };
     livetvCache.set(channel, { at: Date.now(), data });
     res.json(data);
   } catch (err) {
