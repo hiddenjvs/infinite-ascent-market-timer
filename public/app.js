@@ -732,15 +732,13 @@ function getResponsiveColCount() {
 // primary analytical content and default to full width; an individual
 // standalone instrument/market tile or a Live TV feed is secondary
 // added-on content and defaults to a third of the width.
-function defaultColFractionFor(el) {
-  if (el.dataset.livetvTile || el.dataset.standaloneTile) return 1 / 3;
-  const id = el.dataset.sortId;
-  // Markets (the most content-heavy panel) and the FX matrix (a dense table
-  // that needs real width to read) are this dashboard's primary content and
-  // default to full width; Commodities/Bonds/Watchlist are secondary and
-  // default to half width so a pair of them packs side by side instead of
-  // every panel stacking full-width regardless of how much room there is.
-  if (id === 'markets' || id === 'fx') return 1;
+// Every panel defaults to the same size (half width, so a pair packs side
+// by side) rather than a mixed full/half/third scheme — a uniform grid of
+// same-sized windows reads cleaner than a hierarchy of different widths.
+// The FX matrix's own minimum-width floor (see minColSpanFor) still applies
+// on top of this if the user tries to manually shrink it further — that's
+// a hard legibility constraint, not a sizing preference.
+function defaultColFractionFor() {
   return 1 / 2;
 }
 
@@ -763,9 +761,19 @@ function colLeftCalc(totalCols, col) {
   return `calc((100% - ${gutters}px) / ${totalCols} * ${col} + ${col * GRID_GUTTER}px)`;
 }
 
+// A stray NaN/0/negative stored value (from any edge case, past or future)
+// would otherwise cascade through every downstream Math.min/max — those
+// silently propagate NaN rather than throwing, which breaks placement for
+// every panel processed after the corrupted one, not just its own. Anything
+// read from localStorage gets validated before use.
+function sanitizePositiveNumber(v) {
+  return typeof v === 'number' && Number.isFinite(v) && v > 0 ? v : null;
+}
+
 function panelColSpan(el, totalCols, state) {
   const saved = state[el.dataset.sortId];
-  const fraction = saved && saved.colFraction != null ? saved.colFraction : defaultColFractionFor(el);
+  const savedFraction = saved ? sanitizePositiveNumber(saved.colFraction) : null;
+  const fraction = savedFraction != null ? Math.min(1, savedFraction) : defaultColFractionFor(el);
   const min = minColSpanFor(el, totalCols);
   return Math.max(min, Math.min(totalCols, Math.round(fraction * totalCols)));
 }
@@ -802,8 +810,9 @@ function repackDashboard() {
   const placements = [];
   panelEls.forEach((el) => {
     const saved = state[el.dataset.sortId];
+    const savedHeight = saved ? sanitizePositiveNumber(saved.heightPx) : null;
     const span = parseInt(el.dataset.gridColSpan, 10);
-    const heightPx = saved && saved.heightPx != null ? saved.heightPx : Math.max(GRID_HEIGHT_MIN, el.scrollHeight);
+    const heightPx = savedHeight != null ? savedHeight : Math.max(GRID_HEIGHT_MIN, el.scrollHeight);
 
     let bestCol = 0;
     let bestY = Infinity;

@@ -432,6 +432,10 @@ a.headline-text:hover {
   align-items: flex-start;
   justify-content: space-between;
   gap: 8px;
+  /* Every card is removable, so the ✕ (absolutely positioned, not part of
+     this flex flow) always occupies the top-right corner — reserve space
+     for it here so the status pill/countdown never renders underneath it. */
+  padding-right: 28px;
   cursor: grab;
 }
 
