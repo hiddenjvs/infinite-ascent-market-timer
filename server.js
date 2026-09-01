@@ -133,6 +133,63 @@ app.get('/api/search', async (req, res) => {
 const LIVETV_CACHE_TTL_MS = 5 * 60 * 1000;
 const livetvCache = new Map();
 
+// Scraping the /live page's HTML turned out to be fundamentally unreliable
+// (which template YouTube serves, and which embedded JSON fields are even
+// present, varies by requester IP) — resolve_url instead, YouTube's own
+// internal "what does this URL point to" API, the same one youtube.com's
+// web client calls. It returns clean structured JSON rather than a page to
+// scrape. Even so, from Render's IP specifically it has (confirmed, not
+// theorized) intermittently returned an unrelated video for some channels —
+// looks like IP-reputation-based ad/promo content substitution on YouTube's
+// end, not a parsing bug, since it resolves correctly from a residential IP
+// every time with identical code. The API key isn't a secret credential;
+// it's YouTube's public web-client key, hardcoded into every youtube.com
+// page load and used openly by this exact technique in other open-source
+// YouTube tooling.
+const LIVETV_EXPECTED_NAME = {
+  UCIALMKvObZNtJ6AmdCLP7Lg: /bloomberg/i,
+  UCeY0bbntWzzVIaj2z3QigXg: /nbc/i,
+  UCvJJ_dzjViJCoLf5uKUTwoA: /cnbc/i,
+  'UCoMdktPbSTixAyNGwb-UYkQ': /sky/i
+};
+
+async function resolveLiveVideoId(channel) {
+  const liveUrl = `https://www.youtube.com/channel/${encodeURIComponent(channel)}/live`;
+  const r = await fetch(
+    'https://www.youtube.com/youtubei/v1/navigation/resolve_url?key=AIzaSyAO_FJ2SlqU8Q4STEHLGCilw_Y9_11qcW8',
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'User-Agent': YOUTUBE_HEADERS['User-Agent'] },
+      body: JSON.stringify({
+        context: { client: { clientName: 'WEB', clientVersion: '2.20240101.00.00' } },
+        url: liveUrl
+      })
+    }
+  );
+  if (!r.ok) throw new Error(`YouTube responded ${r.status}`);
+  const json = await r.json();
+  const match = JSON.stringify(json).match(/"videoId":"([A-Za-z0-9_-]{11})"/);
+  if (!match) throw new Error('No live video found for this channel');
+  return match[1];
+}
+
+// Cross-checks the resolved video actually belongs to the requested network
+// before trusting it — showing the WRONG network mislabeled as the right one
+// is worse than showing "not live right now", so a video that fails this
+// check is treated the same as a resolution failure rather than served.
+async function verifyVideoBelongsToChannel(videoId, channel) {
+  const expected = LIVETV_EXPECTED_NAME[channel];
+  if (!expected) return true;
+  try {
+    const r = await fetch(`https://www.youtube.com/oembed?url=${encodeURIComponent(`https://www.youtube.com/watch?v=${videoId}`)}&format=json`);
+    if (!r.ok) return true; // oEmbed itself failing shouldn't block an otherwise-plausible result
+    const data = await r.json();
+    return expected.test(data.author_name || '') || expected.test(data.title || '');
+  } catch (err) {
+    return true; // a network hiccup on the verification step shouldn't block on its own
+  }
+}
+
 app.get('/api/livetv/:channel', async (req, res) => {
   const { channel } = req.params;
   const cached = livetvCache.get(channel);
@@ -141,35 +198,27 @@ app.get('/api/livetv/:channel', async (req, res) => {
   }
 
   try {
-    // Scraping the /live page's HTML turned out to be fundamentally
-    // unreliable: which template YouTube serves (and which embedded JSON
-    // fields are even present) varies by requester IP, and every regex/
-    // proximity heuristic tried against it was wrong for at least one
-    // channel in production even though it worked locally. Use YouTube's
-    // own internal "resolve URL" API instead — the same one youtube.com's
-    // web client calls to figure out what a given URL points to — which
-    // returns clean structured JSON instead of a page to scrape. The API
-    // key below isn't a secret credential; it's YouTube's public web-client
-    // key, hardcoded into every youtube.com page load and used openly by
-    // this exact technique in other open-source YouTube tooling.
-    const liveUrl = `https://www.youtube.com/channel/${encodeURIComponent(channel)}/live`;
-    const r = await fetch(
-      'https://www.youtube.com/youtubei/v1/navigation/resolve_url?key=AIzaSyAO_FJ2SlqU8Q4STEHLGCilw_Y9_11qcW8',
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'User-Agent': YOUTUBE_HEADERS['User-Agent'] },
-        body: JSON.stringify({
-          context: { client: { clientName: 'WEB', clientVersion: '2.20240101.00.00' } },
-          url: liveUrl
-        })
+    let videoId = null;
+    let lastAttempt = null;
+    // A wrong result looked non-deterministic across requests (consistent
+    // with rotating ad/promo substitution) — a couple of retries have a
+    // real shot at landing on a request that resolves correctly.
+    for (let attempt = 0; attempt < 3 && !videoId; attempt++) {
+      const candidate = await resolveLiveVideoId(channel);
+      lastAttempt = candidate;
+      if (await verifyVideoBelongsToChannel(candidate, channel)) {
+        videoId = candidate;
       }
-    );
-    if (!r.ok) throw new Error(`YouTube responded ${r.status}`);
-    const json = await r.json();
-    const match = JSON.stringify(json).match(/"videoId":"([A-Za-z0-9_-]{11})"/);
-    if (!match) throw new Error('No live video found for this channel');
+    }
+    if (!videoId) {
+      // All attempts resolved to something that failed verification — if we
+      // have any prior good cache, prefer stale-but-correct over fresh-but-
+      // wrong. Otherwise there's nothing honest left to serve but an error.
+      if (cached) return res.json(cached.data);
+      throw new Error(`Could not confirm the live video for this channel (got ${lastAttempt})`);
+    }
 
-    const data = { videoId: match[1] };
+    const data = { videoId };
     livetvCache.set(channel, { at: Date.now(), data });
     res.json(data);
   } catch (err) {
