@@ -1,0 +1,6 @@
+[
+  { "symbol": "FRED:DFF", "name": "Fed Funds Rate", "flag": "🇺🇸", "unit": "%" },
+  { "symbol": "FRED:ECBDFR", "name": "ECB Deposit Rate", "flag": "🇪🇺", "unit": "%" },
+  { "symbol": "FRED:IUDSOIA", "name": "BOE Rate (SONIA)", "flag": "🇬🇧", "unit": "%" },
+  { "symbol": "FRED:IRSTCI01JPM156N", "name": "BOJ Rate (Call Money)", "flag": "🇯🇵", "unit": "%" }
+]

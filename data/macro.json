@@ -1,0 +1,7 @@
+[
+  { "symbol": "FRED:CPIAUCSL", "name": "US CPI (Inflation)", "flag": "📈", "unit": "idx" },
+  { "symbol": "FRED:UNRATE", "name": "US Unemployment Rate", "flag": "👷", "unit": "%" },
+  { "symbol": "FRED:GDPC1", "name": "US Real GDP", "flag": "🏭", "unit": "$Bn" },
+  { "symbol": "FRED:PAYEMS", "name": "US Nonfarm Payrolls", "flag": "💼", "unit": "K" },
+  { "symbol": "FRED:INDPRO", "name": "US Industrial Production", "flag": "⚙️", "unit": "idx" }
+]

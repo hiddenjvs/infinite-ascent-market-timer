@@ -1019,6 +1019,17 @@ a.headline-text:hover {
      available space; scrolling to reach a squeezed panel is correct,
      silently clipping it out of reach is not. */
   overflow: auto;
+  /* A bounded height, not auto — every pane's own panel-body already
+     scrolls internally (see .dashboard-panel .panel-body below), which
+     only matters if the workspace itself stops growing to swallow
+     whatever its tallest pane's full content would need. Without a cap,
+     align-items:stretch forces every sibling in a row (a two-line list
+     of markets sitting next to a single video tile, say) to match
+     whichever one has the most content, turning short panels into mostly
+     empty space and pushing anything below far off-screen. This is also
+     what the fixed-workspace tiling model calls for — panes reflow
+     inside a stable container, the container doesn't reflow around them. */
+  height: min(80vh, 900px);
   min-height: 480px;
 }
 

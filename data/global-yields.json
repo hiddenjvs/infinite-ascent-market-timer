@@ -1,0 +1,6 @@
+[
+  { "symbol": "FRED:IRLTLT01DEM156N", "name": "Germany 10-Year Yield", "flag": "🇩🇪", "unit": "%" },
+  { "symbol": "FRED:IRLTLT01GBM156N", "name": "UK 10-Year Yield", "flag": "🇬🇧", "unit": "%" },
+  { "symbol": "FRED:IRLTLT01JPM156N", "name": "Japan 10-Year Yield", "flag": "🇯🇵", "unit": "%" },
+  { "symbol": "FRED:IRLTLT01FRM156N", "name": "France 10-Year Yield", "flag": "🇫🇷", "unit": "%" }
+]

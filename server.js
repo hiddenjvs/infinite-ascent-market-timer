@@ -1,3 +1,4 @@
+require('dotenv').config();
 const express = require('express');
 const path = require('path');
 const fs = require('fs');
@@ -7,6 +8,9 @@ const marketsExtra = require('./data/markets-extra.json');
 const fxCurrencies = require('./data/fx.json');
 const commodities = require('./data/commodities.json');
 const bonds = require('./data/bonds.json');
+const globalYields = require('./data/global-yields.json');
+const centralBankRates = require('./data/central-bank-rates.json');
+const macro = require('./data/macro.json');
 
 const app = express();
 const PORT = process.env.PORT || 4173;
@@ -21,7 +25,10 @@ const bootstrapScript = `<script>window.__BOOTSTRAP__=${JSON.stringify({
   marketsExtra,
   fx: fxCurrencies,
   commodities,
-  bonds
+  bonds,
+  globalYields,
+  centralBankRates,
+  macro
 })};</script>`;
 const indexHtml = indexTemplate.replace('</head>', `${bootstrapScript}</head>`);
 
@@ -73,6 +80,18 @@ app.get('/api/commodities', (req, res) => {
 
 app.get('/api/bonds', (req, res) => {
   res.json(bonds);
+});
+
+app.get('/api/global-yields', (req, res) => {
+  res.json(globalYields);
+});
+
+app.get('/api/central-bank-rates', (req, res) => {
+  res.json(centralBankRates);
+});
+
+app.get('/api/macro', (req, res) => {
+  res.json(macro);
 });
 
 // Ticker search for the "add a stock" watchlist feature — proxies Yahoo
@@ -337,9 +356,97 @@ app.get('/api/news', async (req, res) => {
   res.json(payload);
 });
 
+// Government yields / central bank rates / macro indicators — all via FRED
+// (Federal Reserve Economic Data), the standard free source for exactly
+// this kind of data. A "symbol" of FRED:<series id> is handled entirely
+// separately from the Yahoo Finance path below and reshaped into the same
+// payload shape /api/chart already returns, so every existing chart/card
+// component (IndexPanel, the detail modal, etc.) works with a FRED-backed
+// series with no frontend changes at all — it just looks like another
+// ticker. Cached far longer than Yahoo quotes (FRED series are daily at
+// best, monthly/quarterly for most macro data) to avoid hammering FRED
+// with a request every 20s from the normal refresh cycle for data that
+// hasn't changed since yesterday.
+const FRED_CACHE_TTL_MS = 60 * 60 * 1000;
+const fredCache = new Map();
+// How far back to request observations for, per chart range — FRED has no
+// intraday data, so 1D/5D just show whatever's most recent rather than
+// being literally a single day.
+const FRED_RANGE_LOOKBACK_DAYS = { '1d': 120, '5d': 120, '1mo': 120, '6mo': 240, '1y': 800, max: null };
+
+async function fetchFredChart(seriesId, range) {
+  if (!process.env.FRED_API_KEY) throw new Error('FRED_API_KEY not configured');
+
+  let observationStart = '1900-01-01';
+  if (range === 'ytd') {
+    observationStart = `${new Date().getUTCFullYear()}-01-01`;
+  } else if (FRED_RANGE_LOOKBACK_DAYS[range]) {
+    const d = new Date();
+    d.setUTCDate(d.getUTCDate() - FRED_RANGE_LOOKBACK_DAYS[range]);
+    observationStart = d.toISOString().slice(0, 10);
+  }
+
+  const obsUrl = `https://api.stlouisfed.org/fred/series/observations?series_id=${encodeURIComponent(seriesId)}&api_key=${process.env.FRED_API_KEY}&file_type=json&sort_order=asc&observation_start=${observationStart}`;
+  const infoUrl = `https://api.stlouisfed.org/fred/series?series_id=${encodeURIComponent(seriesId)}&api_key=${process.env.FRED_API_KEY}&file_type=json`;
+  const [obsRes, infoRes] = await Promise.all([fetch(obsUrl), fetch(infoUrl)]);
+  if (!obsRes.ok) throw new Error(`FRED responded ${obsRes.status}`);
+  const obsJson = await obsRes.json();
+  const infoJson = infoRes.ok ? await infoRes.json() : null;
+  const title = infoJson?.seriess?.[0]?.title || seriesId;
+
+  const toUnixSeconds = (dateStr) => Math.floor(new Date(`${dateStr}T00:00:00Z`).getTime() / 1000);
+  const points = (obsJson.observations || [])
+    .filter((o) => o.value !== '.')
+    .map((o) => ({ time: toUnixSeconds(o.date), price: parseFloat(o.value) }))
+    .filter((p) => Number.isFinite(p.price));
+  if (!points.length) throw new Error('No data returned for this series');
+
+  const price = points[points.length - 1].price;
+  const previousClose = points.length > 1 ? points[points.length - 2].price : null;
+  const change = previousClose != null ? price - previousClose : null;
+  const changePercent = change != null && previousClose ? (change / previousClose) * 100 : null;
+
+  return {
+    symbol: `FRED:${seriesId}`,
+    currency: null,
+    price,
+    previousClose,
+    change,
+    changePercent,
+    dayHigh: null,
+    dayLow: null,
+    fiftyTwoWeekHigh: Math.max(...points.map((p) => p.price)),
+    fiftyTwoWeekLow: Math.min(...points.map((p) => p.price)),
+    volume: null,
+    marketTime: points[points.length - 1].time,
+    marketState: null,
+    exchangeName: 'FRED',
+    fullExchangeName: 'Federal Reserve Economic Data (FRED)',
+    longName: title,
+    points
+  };
+}
+
 app.get('/api/chart/:symbol', async (req, res) => {
   const { symbol } = req.params;
   const range = req.query.range || '1d';
+
+  if (symbol.startsWith('FRED:')) {
+    const fredCacheKey = `${symbol}|${range}`;
+    const fredCached = fredCache.get(fredCacheKey);
+    if (fredCached && Date.now() - fredCached.at < FRED_CACHE_TTL_MS) {
+      return res.json(fredCached.data);
+    }
+    try {
+      const payload = await fetchFredChart(symbol.slice('FRED:'.length), range);
+      fredCache.set(fredCacheKey, { at: Date.now(), data: payload });
+      return res.json(payload);
+    } catch (err) {
+      if (fredCached) return res.json(fredCached.data);
+      return res.status(502).json({ error: err.message, symbol });
+    }
+  }
+
   const interval = req.query.interval || '5m';
   const cacheKey = `${symbol}|${range}|${interval}`;
 

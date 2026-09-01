@@ -704,19 +704,27 @@ function makeSplit(dir, children) {
 // densest panel) gets the most width; everything else shares the rest.
 function defaultDashboardTree() {
   return makeSplit('row', [
-    { size: 60, node: makeLeaf('markets') },
+    { size: 56, node: makeLeaf('markets') },
     {
-      size: 40,
+      size: 44,
       node: makeSplit('column', [
         {
-          size: 32,
+          size: 26,
           node: makeSplit('row', [
             { size: 50, node: makeLeaf('commodities') },
             { size: 50, node: makeLeaf('bonds') }
           ])
         },
-        { size: 16, node: makeLeaf('watchlist') },
-        { size: 52, node: makeLeaf('fx') }
+        { size: 13, node: makeLeaf('watchlist') },
+        { size: 33, node: makeLeaf('fx') },
+        {
+          size: 28,
+          node: makeSplit('row', [
+            { size: 34, node: makeLeaf('global-yields') },
+            { size: 33, node: makeLeaf('central-bank-rates') },
+            { size: 33, node: makeLeaf('macro') }
+          ])
+        }
       ])
     }
   ]);
@@ -1163,7 +1171,10 @@ const CORE_PANELS = [
   { id: 'commodities', label: 'Commodities Panel', icon: '🛢️' },
   { id: 'bonds', label: 'Bonds Panel', icon: '🏦' },
   { id: 'watchlist', label: 'Watchlist Panel', icon: '⭐' },
-  { id: 'fx', label: 'FX Matrix', icon: '💱' }
+  { id: 'fx', label: 'FX Matrix', icon: '💱' },
+  { id: 'global-yields', label: 'Global Yields Panel', icon: '🌍' },
+  { id: 'central-bank-rates', label: 'Central Bank Rates Panel', icon: '🏛️' },
+  { id: 'macro', label: 'Macro Panel', icon: '📊' }
 ];
 
 function getClosedPanels() {
@@ -1447,6 +1458,9 @@ function createTickerBucket(storageKey, gridId) {
 const watchlistBucket = createTickerBucket('watchlist:tickers', 'watchlist-grid');
 const commoditiesAddedBucket = createTickerBucket('commodities:added', 'commodities-grid');
 const bondsAddedBucket = createTickerBucket('bonds:added', 'bonds-grid');
+const globalYieldsAddedBucket = createTickerBucket('global-yields:added', 'global-yields-grid');
+const centralBankRatesAddedBucket = createTickerBucket('central-bank-rates:added', 'central-bank-rates-grid');
+const macroAddedBucket = createTickerBucket('macro:added', 'macro-grid');
 
 // Shared by Commodities and Bonds — both are "a curated fixed list, plus
 // whatever the user has added" panels, same shape, just different data.
@@ -2584,6 +2598,15 @@ async function init() {
         emptyText: 'No matching bond/yield',
         onSelect: (item) => bondsAddedBucket.addItem({ symbol: item.symbol, name: item.name })
       });
+    }
+    if (!closedIds.has('global-yields')) {
+      initCuratedBucket('global-yields-grid', 'globalYields', globalYieldsAddedBucket);
+    }
+    if (!closedIds.has('central-bank-rates')) {
+      initCuratedBucket('central-bank-rates-grid', 'centralBankRates', centralBankRatesAddedBucket);
+    }
+    if (!closedIds.has('macro')) {
+      initCuratedBucket('macro-grid', 'macro', macroAddedBucket);
     }
     if (!closedIds.has('watchlist')) {
       initWatchlist();

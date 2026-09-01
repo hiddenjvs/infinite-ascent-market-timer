@@ -11,6 +11,7 @@
     "node": ">=18"
   },
   "dependencies": {
+    "dotenv": "^17.4.2",
     "express": "^4.19.2",
     "fast-xml-parser": "^5.11.1"
   }
