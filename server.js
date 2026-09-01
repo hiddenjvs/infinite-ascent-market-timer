@@ -146,41 +146,48 @@ app.get('/api/livetv/:channel', async (req, res) => {
     if (!r.ok) throw new Error(`YouTube responded ${r.status}`);
     const html = await r.text();
 
+    // The page's markup varies by template (classic vs. a newer
+    // WIZ-framework render — same code, different response depending on
+    // the requester's IP reputation, apparently) and neither the canonical
+    // link tag nor Open Graph meta tags are reliably present or correct —
+    // on the WIZ template the canonical tag's href is literally the string
+    // "undefined" (a bug in that template itself). Worse, a bare "first
+    // videoId in the page" search is NOT reliably the live video either:
+    // decoy/ad/recommended video references are scattered throughout, and
+    // which one sorts first shifts between requests as ad content rotates
+    // — it worked in earlier spot checks by coincidence, then silently
+    // served Bloomberg and CNBC's tabs someone else's video in production.
+    //
+    // The one thing that's structurally guaranteed regardless of template
+    // or ad rotation: the target channel's OWN id and its live video's id
+    // appear near each other in the same metadata object, while decoy
+    // videos belong to (and are annotated with) other channels. Anchor on
+    // "channelId":"<the id we asked for>" and take the nearest videoId to
+    // it — that ties the result to the actual channel requested instead of
+    // trusting page position.
+    let videoId = null;
+    const channelIdx = html.indexOf(`"channelId":"${channel}"`);
+    if (channelIdx !== -1) {
+      const windowStart = Math.max(0, channelIdx - 2000);
+      const windowEnd = Math.min(html.length, channelIdx + 2000);
+      const nearby = html.slice(windowStart, windowEnd);
+      const nearMatch = nearby.match(/"videoId":"([A-Za-z0-9_-]{11})"/);
+      if (nearMatch) videoId = nearMatch[1];
+    }
+    if (!videoId) {
+      // Fallback for whatever template comes next, or if the channel id
+      // genuinely isn't findable this way.
+      const canonical = html.match(/<link rel="canonical" href="https:\/\/www\.youtube\.com\/watch\?v=([A-Za-z0-9_-]{11})"/);
+      const bare = html.match(/"videoId":"([A-Za-z0-9_-]{11})"/);
+      videoId = (canonical && canonical[1]) || (bare && bare[1]) || null;
+    }
+    if (!videoId) throw new Error('No live video found for this channel');
+
     if (req.query.debug) {
-      // Temporary: the "first videoId in the page" heuristic turned out to
-      // be unreliable on Render's WIZ-template response (it grabbed an
-      // unrelated/recommended video for Bloomberg and CNBC) — check what
-      // more specific markers are actually present before picking a fix.
-      const canonical = html.match(/<link rel="canonical" href="([^"]+)"/);
-      const ogUrl = html.match(/<meta property="og:url" content="([^"]+)"/);
-      const ogVideoUrl = html.match(/<meta property="og:video:url" content="([^"]+)"/);
-      const linkItemprop = html.match(/<link itemprop="url" href="([^"]+)"/);
-      const allIds = [...new Set([...html.matchAll(/"videoId":"([A-Za-z0-9_-]{11})"/g)].map((m) => m[1]))];
-      return res.json({
-        length: html.length,
-        canonical: canonical && canonical[1],
-        ogUrl: ogUrl && ogUrl[1],
-        ogVideoUrl: ogVideoUrl && ogVideoUrl[1],
-        linkItemprop: linkItemprop && linkItemprop[1],
-        allIds: allIds.slice(0, 15)
-      });
+      return res.json({ videoId, usedChannelAnchor: channelIdx !== -1, length: html.length });
     }
 
-    // Render (and apparently only Render — not tested elsewhere, but the
-    // exact same code scrapes fine from a residential IP) gets served a
-    // newer WIZ-framework YouTube template where `videoDetails` is a
-    // different nested object (playerOverlayVideoDetailsRenderer) that
-    // doesn't lead with videoId, so anchoring to "videoDetails":{"videoId"
-    // never matches there even though the page is genuine and has the
-    // video. A bare "videoId" field lookup works across both templates —
-    // it's the first one in the page on both — with the canonical link
-    // tag kept as a fallback for whatever template comes next.
-    const match =
-      html.match(/"videoId":"([A-Za-z0-9_-]{11})"/) ||
-      html.match(/<link rel="canonical" href="https:\/\/www\.youtube\.com\/watch\?v=([A-Za-z0-9_-]{11})"/);
-    if (!match) throw new Error('No live video found for this channel');
-
-    const data = { videoId: match[1] };
+    const data = { videoId };
     livetvCache.set(channel, { at: Date.now(), data });
     res.json(data);
   } catch (err) {
