@@ -145,6 +145,27 @@ app.get('/api/livetv/:channel', async (req, res) => {
     const r = await fetch(url, { headers: YOUTUBE_HEADERS });
     if (!r.ok) throw new Error(`YouTube responded ${r.status}`);
     const html = await r.text();
+
+    if (req.query.debug) {
+      // Temporary: the "first videoId in the page" heuristic turned out to
+      // be unreliable on Render's WIZ-template response (it grabbed an
+      // unrelated/recommended video for Bloomberg and CNBC) — check what
+      // more specific markers are actually present before picking a fix.
+      const canonical = html.match(/<link rel="canonical" href="([^"]+)"/);
+      const ogUrl = html.match(/<meta property="og:url" content="([^"]+)"/);
+      const ogVideoUrl = html.match(/<meta property="og:video:url" content="([^"]+)"/);
+      const linkItemprop = html.match(/<link itemprop="url" href="([^"]+)"/);
+      const allIds = [...new Set([...html.matchAll(/"videoId":"([A-Za-z0-9_-]{11})"/g)].map((m) => m[1]))];
+      return res.json({
+        length: html.length,
+        canonical: canonical && canonical[1],
+        ogUrl: ogUrl && ogUrl[1],
+        ogVideoUrl: ogVideoUrl && ogVideoUrl[1],
+        linkItemprop: linkItemprop && linkItemprop[1],
+        allIds: allIds.slice(0, 15)
+      });
+    }
+
     // Render (and apparently only Render — not tested elsewhere, but the
     // exact same code scrapes fine from a residential IP) gets served a
     // newer WIZ-framework YouTube template where `videoDetails` is a
